@@ -2598,6 +2598,11 @@ namespace webifc::geometry
       }
 
       std::vector<glm::dvec3> currentSegmentPoints(curve.points.begin() + curvePointsOffset, curve.points.end());
+      if (currentSegmentPoints.empty())
+      {
+          spdlog::error("[ComputeCurve()] IFCCURVESEGMENT {} has empty parent curve {}", expressID, ParentCurveID);
+          break;
+      }
       if (curvePointsOffset > 0)
       {
           // previous segment's end point for continuity check
