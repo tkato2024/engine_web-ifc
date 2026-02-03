@@ -61,9 +61,13 @@ namespace webifc::parsing {
       while (!_tokenStream->IsAtEnd()) {
           IfcTokenType t = static_cast<IfcTokenType>(_tokenStream->Read<char>());
           if (t == IfcTokenType::LINE_END) break;
-          if (t == IfcTokenType::LABEL) 
+          if (t == IfcTokenType::STRING) 
           {
             std::string_view schemaName = _tokenStream->ReadString();
+            auto suffixPos = schemaName.find('_');
+            if (suffixPos != std::string_view::npos) {
+              schemaName = schemaName.substr(0, suffixPos);
+            }
             for (size_t i = 0; i < schemas.size();i++) 
             {
               if (_schemaManager.GetSchemaName(schemas[i]) == schemaName) return schemas[i];
