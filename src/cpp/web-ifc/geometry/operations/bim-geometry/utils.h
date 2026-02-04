@@ -375,10 +375,13 @@ namespace bimGeometry
 		}
 		else
 		{
+			const bool closed = (endRad == CONST_PI * 2 && startRad == 0);
+			const double sweep = (endRad - startRad);
+			const int denom = closed ? numSegments : (numSegments - 1);
+			const double step = sweep / static_cast<double>(denom);			
 			for (int i = 0; i < numSegments; i++)
 			{
-				double ratio = static_cast<double>(i) / (numSegments - 1);
-				double angle = startRad + ratio * (endRad - startRad);
+				double angle = startRad + step * static_cast<double>(i);
 
 				glm::dvec2 circleCoordinate;
 				if (swap)
@@ -398,7 +401,7 @@ namespace bimGeometry
 			}
 
 			// check for a closed curve
-			if (endRad == CONST_PI * 2 && startRad == 0)
+			if (closed)
 			{
 				c.points.push_back(c.points[0]);
 
