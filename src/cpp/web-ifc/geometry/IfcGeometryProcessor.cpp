@@ -878,11 +878,15 @@ namespace webifc::geometry
                 }
 
                 IfcCurve directrix = _geometryLoader.GetCurve(directrixRef, 3);
+                if (directrix.points.size() >= 2)
+                {
+                    closed = glm::distance(directrix.points.front(), directrix.points.back()) < EPS_SMALL;
+                }
 
                 IfcProfile profile;
                 profile.curve = GetCircleCurve(radius, _settings._circleSegments);
 
-                IfcGeometry geom = SweepCircular(_geometryLoader.GetLinearScalingFactor(), closed, profile, radius, directrix);
+                IfcGeometry geom = SweepCircular(_geometryLoader.GetLinearScalingFactor(), closed, profile, radius, directrix, glm::dvec3(0), false, true);
 
                 geom.sweptDiskSolid.axis = std::vector<IfcCurve>{directrix};
                 geom.sweptDiskSolid.profiles = std::vector<IfcProfile>{profile};

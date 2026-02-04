@@ -996,7 +996,72 @@ namespace bimGeometry
 		return geom;
 	}
 
-	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false)
+	inline void AddSweepCircularCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps)
+	{
+		std::vector<glm::dvec3> capProfile = curve;
+		if (capProfile.size() < 3)
+		{
+			return;
+		}
+		if (glm::distance(capProfile.front(), capProfile.back()) < eps)
+		{
+			capProfile.pop_back();
+		}
+		if (capProfile.size() < 3)
+		{
+			return;
+		}
+
+		std::vector<Point> poly3D;
+		poly3D.reserve(capProfile.size());
+		for (const auto &p : capProfile)
+		{
+			poly3D.push_back({p.x, p.y, p.z});
+		}
+
+		Projection proj = bestProjection(poly3D);
+		std::vector<std::vector<Point>> poly3DVec = {poly3D};
+		std::vector<std::vector<Point>> poly2D = projectTo2D(poly3DVec, proj);
+
+		std::vector<std::vector<std::array<double, 2>>> polygon(1);
+		for (const auto &pt : poly2D[0])
+		{
+			polygon[0].push_back({pt[0], pt[1]});
+		}
+
+		std::vector<uint32_t> capIndices = mapbox::earcut<uint32_t>(polygon);
+		if (capIndices.size() < 3)
+		{
+			return;
+		}
+
+		bool flipWinding = false;
+		if (glm::length(normalWanted) > eps)
+		{
+			glm::dvec3 normal;
+			if (computeSafeNormal(capProfile[capIndices[0]], capProfile[capIndices[1]], capProfile[capIndices[2]], normal, eps))
+			{
+				if (glm::dot(normal, normalWanted) < 0)
+				{
+					flipWinding = true;
+				}
+			}
+		}
+
+		for (size_t i = 0; i + 2 < capIndices.size(); i += 3)
+		{
+			uint32_t i0 = capIndices[i + 0];
+			uint32_t i1 = capIndices[i + 1];
+			uint32_t i2 = capIndices[i + 2];
+			if (flipWinding)
+			{
+				std::swap(i1, i2);
+			}
+			geom.AddFace(capProfile[i0], capProfile[i1], capProfile[i2]);
+		}
+	}
+
+	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool cap = false)
 	{
 		Geometry geom;
 
@@ -1225,6 +1290,16 @@ namespace bimGeometry
 				geom.AddFace(tl, br, bl);
 				geom.AddFace(tl, tr, br);
 			}
+		}
+
+		if (cap && !closed && dpts.size() >= 2 && curves.size() >= 2)
+		{
+			glm::dvec3 startDir = glm::normalize(dpts[1] - dpts[0]);
+			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
+
+			double capEps = EPS_SMALL * scaling;
+			AddSweepCircularCap(geom, curves.front(), -startDir, capEps);
+			AddSweepCircularCap(geom, curves.back(), endDir, capEps);
 		}
 
 		return geom;
