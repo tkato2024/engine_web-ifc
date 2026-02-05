@@ -843,7 +843,6 @@ namespace bimGeometry
 
 		// compute curve for each part of the directrix
 		std::vector<Curve> curves;
-		std::vector<glm::dmat4> transforms;
 
 		for (size_t i = 0; i < dpts.size(); i++)
 		{
@@ -1153,7 +1152,6 @@ namespace bimGeometry
 			std::vector<glm::dvec3> segmentForCurve;
 			std::vector<glm::dvec3> innerSegmentForCurve;
 
-			glm::dvec3 directrix2;
 			glm::dvec3 planeNormal;
 			glm::dvec3 directrixSegmentNormal;
 			glm::dvec3 planeOrigin;
@@ -1163,14 +1161,12 @@ namespace bimGeometry
 				planeNormal = glm::normalize(dpts[1] - dpts[0]);
 				directrixSegmentNormal = planeNormal;
 				planeOrigin = dpts[0];
-				directrix2 = planeNormal;
 			}
 			else if (i == dpts.size() - 1) // end
 			{
 				planeNormal = glm::normalize(dpts[i] - dpts[i - 1]);
 				directrixSegmentNormal = planeNormal;
 				planeOrigin = dpts[i];
-				directrix2 = planeNormal;
 			}
 			else // middle
 			{
@@ -1178,7 +1174,6 @@ namespace bimGeometry
 				glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
 				glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
 				glm::dvec3 p = glm::normalize(glm::cross(n1, n2));
-				directrix2 = -n1;
 
 				// double prod = glm::dot(n1, n2);
 
@@ -1208,31 +1203,6 @@ namespace bimGeometry
 
 				planeOrigin = dpts[i];
 			}
-
-			glm::dvec3 dz = glm::normalize(directrix2);
-			glm::dvec3 dx = glm::dvec3(1, 0, 0);
-			glm::dvec3 dy = glm::dvec3(0, 1, 0);
-
-			double parallelZ = glm::abs(glm::dot(dz, glm::dvec3(0, 0, 1)));
-
-			if (parallelZ > 1 - EPS_BIG2)
-			{
-				dx = glm::normalize(glm::cross(dz, glm::dvec3(0, 1, 0)));
-			}
-			else
-			{
-				dx = glm::normalize(glm::cross(dz, glm::dvec3(0, 0, 1)));
-			}
-
-			dy = glm::normalize(glm::cross(dz, dx));
-
-			glm::dmat4 profileScale = glm::dmat4(
-				glm::dvec4(dx * radius, 0),
-				glm::dvec4(dy * radius, 0),
-				glm::dvec4(dz, 0),
-				glm::dvec4(planeOrigin, 1));
-
-			transforms.push_back(profileScale);
 
 			if (curves.empty())
 			{
@@ -1340,12 +1310,6 @@ namespace bimGeometry
 		// connect the curves
 		for (size_t i = 1; i < dpts.size(); i++)
 		{
-			glm::dvec3 p1 = dpts[i - 1];
-			glm::dvec3 p2 = dpts[i];
-			glm::dvec3 dir = p1 - p2;
-			glm::dvec4 ddir = glm::dvec4(dir, 0);
-			const double di = glm::distance(p1, p2);
-
 			// Only segments smaller than 10 cm will be represented, those that are bigger will be standardized
 
 			const auto &c1 = curves[i - 1];
