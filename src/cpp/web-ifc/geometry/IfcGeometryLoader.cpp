@@ -40,6 +40,8 @@ namespace webifc::geometry
     std::unordered_map<uint32_t, glm::dvec3>().swap(_cartesianPoint3DCache);
     _cartesianPoint2DCache.clear();
     std::unordered_map<uint32_t, glm::dvec2>().swap(_cartesianPoint2DCache);
+    _directionCache.clear();
+    std::unordered_map<uint32_t, glm::dvec3>().swap(_directionCache);
   }
 
   IfcCrossSections IfcGeometryLoader::GetCrossSections2D(uint32_t expressID) const
@@ -296,7 +298,7 @@ namespace webifc::geometry
             if (tokenTypeAxis == parsing::IfcTokenType::REF)
             {
                 _loader.StepBack();
-                Axis = GetCartesianPoint3D(_loader.GetRefArgument());
+                Axis = GetDirection(_loader.GetRefArgument());
             }
 
             // IfcPointByDistanceExpression : public IfcPoint
@@ -1590,6 +1592,24 @@ namespace webifc::geometry
     glm::dvec3 point(x, y, z);
     _cartesianPoint3DCache.emplace(expressID, point);
     return point;
+  }
+
+  glm::dvec3 IfcGeometryLoader::GetDirection(const uint32_t expressID) const
+  {
+    spdlog::debug("[GetDirection({})]", expressID);
+    if (auto it = _directionCache.find(expressID); it != _directionCache.end())
+    {
+      return it->second;
+    }
+    _loader.MoveToArgumentOffset(expressID, 0);
+    _loader.GetTokenType();
+    double x = _loader.GetDoubleArgument();
+    double y = _loader.GetDoubleArgument();
+    double z = _loader.GetOptionalDoubleParam(0);
+    glm::dvec3 dir(x, y, z);
+    dir = glm::normalize(dir);
+    _directionCache.emplace(expressID, dir);
+    return dir;
   }
 
   glm::dvec2 IfcGeometryLoader::GetCartesianPoint2D(const uint32_t expressID) const
@@ -3751,7 +3771,7 @@ namespace webifc::geometry
     auto positionID = _loader.GetRefArgument();
     double length = _loader.GetDoubleArgument();
 
-    glm::dvec3 direction = GetCartesianPoint3D(positionID);
+    glm::dvec3 direction = GetDirection(positionID);
     direction.x = direction.x * length;
     direction.y = direction.y * length;
     direction.z = direction.z * length;
@@ -4205,7 +4225,7 @@ namespace webifc::geometry
             if (tokenTypeAxis == parsing::IfcTokenType::REF)
             {
                 _loader.StepBack();
-                vector = GetCartesianPoint3D(_loader.GetRefArgument());
+                vector = GetDirection(_loader.GetRefArgument());
             }
             result = GetLocalPlacement(posID, vector);
         }
@@ -4242,7 +4262,7 @@ namespace webifc::geometry
     if (dirToken == parsing::IfcTokenType::REF)
     {
       _loader.StepBack();
-      axis = GetCartesianPoint3D(_loader.GetRefArgument());
+      axis = GetDirection(_loader.GetRefArgument());
     }
 
     glm::dvec3 pos = GetCartesianPoint3D(locationID);

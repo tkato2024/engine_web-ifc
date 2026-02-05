@@ -33,6 +33,7 @@ namespace webifc::geometry
     glm::dmat4 GetLocalPlacement(const uint32_t expressID, glm::dvec3 vector = glm::dvec3(1)) const;
     glm::dvec3 GetCartesianPoint3D(const uint32_t expressID) const;
     glm::dvec2 GetCartesianPoint2D(const uint32_t expressID) const;
+    glm::dvec3 GetDirection(const uint32_t expressID) const;
     glm::dvec3 GetVector(const uint32_t expressID) const;
     IfcProfile GetProfile(uint32_t expressID) const;
     IfcProfile GetProfile3D(uint32_t expressID) const;
@@ -122,6 +123,7 @@ namespace webifc::geometry
     // Caches to avoid repeatedly decoding the same points
     mutable std::unordered_map<uint32_t, glm::dvec3> _cartesianPoint3DCache;
     mutable std::unordered_map<uint32_t, glm::dvec2> _cartesianPoint2DCache;
+    mutable std::unordered_map<uint32_t, glm::dvec3> _directionCache;
     std::unordered_map<uint32_t, std::vector<uint32_t>> PopulateRelVoidsMap();
     std::unordered_map<uint32_t, std::vector<uint32_t>> PopulateRelNestsMap();
     std::unordered_map<uint32_t, std::vector<uint32_t>> PopulateRelAggregatesMap();
