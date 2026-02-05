@@ -75,9 +75,9 @@ namespace webifc::geometry
 		return ifcGeom;
 	}
 
-	inline IfcGeometry Sweep(const double scaling, const bool closed, const IfcProfile &profile, const IfcCurve &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true)
+	inline IfcGeometry Sweep(const double scaling, const bool closed, const IfcProfile &profile, const IfcCurve &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true, const bool cap = false)
 	{
-		IfcGeometry geom = ToIfcGeometry(bimGeometry::SweepFunction(scaling, closed, profile.curve.points, directrix.points, initialDirectrixNormal, rotate90, optimize));
+		IfcGeometry geom = ToIfcGeometry(bimGeometry::SweepFunction(scaling, closed, profile.curve.points, directrix.points, initialDirectrixNormal, rotate90, optimize, cap));
 		return geom;
 	}
 

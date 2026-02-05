@@ -796,10 +796,12 @@ namespace bimGeometry
 		}
 	}
 
+	inline void AddSweepCircularCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps);
+
 	//! This implementation generates much more vertices than needed, and does not have smoothed normals
 	// TODO: Review rotate90 value, as it should be inferred from IFC but the source data had not been identified yet
 	// An arbitrary value has been added in IFCSURFACECURVESWEPTAREASOLID but this is a bad solution
-	inline Geometry SweepFunction(const double scaling, const bool closed, const std::vector<glm::dvec3> &profilePoints, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true)
+	inline Geometry SweepFunction(const double scaling, const bool closed, const std::vector<glm::dvec3> &profilePoints, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true, const bool cap = false)
 	{
 		Geometry geom;
 
@@ -990,6 +992,15 @@ namespace bimGeometry
 				geom.AddFace(tl, br, bl);
 				geom.AddFace(tl, tr, br);
 			}
+		}
+
+		if (cap && !closed && dpts.size() >= 2 && curves.size() >= 2)
+		{
+			glm::dvec3 startDir = glm::normalize(dpts[1] - dpts[0]);
+			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
+			double capEps = EPS_SMALL * scaling;
+			AddSweepCircularCap(geom, curves.front().points, -startDir, capEps);
+			AddSweepCircularCap(geom, curves.back().points, endDir, capEps);
 		}
 
 		return geom;
