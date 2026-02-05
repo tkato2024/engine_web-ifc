@@ -795,7 +795,7 @@ namespace webifc::geometry
 
                 std::reverse(profile.curve.points.begin(), profile.curve.points.end());
 
-                IfcGeometry geom = Sweep(_geometryLoader.GetLinearScalingFactor(), closed, profile, directrix, surface.normal(), true);
+                IfcGeometry geom = Sweep(_geometryLoader.GetLinearScalingFactor(), closed, profile, directrix, surface.normal(), true, true, true);
 
                 mesh.transformation = placement;
                 _expressIDToGeometry[expressID] = geom;
@@ -929,13 +929,13 @@ namespace webifc::geometry
 
                 if (!profile.isComposite)
                 {
-                    geom = Sweep(_geometryLoader.GetLinearScalingFactor(), closed, profile, directrix, axis, false);
+                    geom = Sweep(_geometryLoader.GetLinearScalingFactor(), closed, profile, directrix, axis, false, true, true);
                 }
                 else
                 {
                     for (uint32_t i = 0; i < profile.profiles.size(); i++)
                     {
-                        IfcGeometry geom_t = Sweep(_geometryLoader.GetLinearScalingFactor(), closed, profile.profiles[i], directrix, axis, false, false);
+                        IfcGeometry geom_t = Sweep(_geometryLoader.GetLinearScalingFactor(), closed, profile.profiles[i], directrix, axis, false, false, true);
                         geom.AddPart(geom_t);
                         geom.AddGeometry(geom_t);
                     }
