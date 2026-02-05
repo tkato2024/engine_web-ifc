@@ -796,7 +796,7 @@ namespace bimGeometry
 		}
 	}
 
-	inline void AddSweepCircularCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps);
+	inline void AddSweepCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps);
 
 	//! This implementation generates much more vertices than needed, and does not have smoothed normals
 	// TODO: Review rotate90 value, as it should be inferred from IFC but the source data had not been identified yet
@@ -999,14 +999,14 @@ namespace bimGeometry
 			glm::dvec3 startDir = glm::normalize(dpts[1] - dpts[0]);
 			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
 			double capEps = EPS_SMALL * scaling;
-			AddSweepCircularCap(geom, curves.front().points, -startDir, capEps);
-			AddSweepCircularCap(geom, curves.back().points, endDir, capEps);
+			AddSweepCap(geom, curves.front().points, -startDir, capEps);
+			AddSweepCap(geom, curves.back().points, endDir, capEps);
 		}
 
 		return geom;
 	}
 
-	inline void AddSweepCircularCapWithHoles(Geometry &geom, const std::vector<glm::dvec3> &outerCurve, const std::vector<glm::dvec3> &innerCurve, const glm::dvec3 &normalWanted, const double eps)
+	inline void AddSweepCapWithHoles(Geometry &geom, const std::vector<glm::dvec3> &outerCurve, const std::vector<glm::dvec3> &innerCurve, const glm::dvec3 &normalWanted, const double eps)
 	{
 		std::vector<glm::dvec3> outerProfile = outerCurve;
 		if (outerProfile.size() < 3)
@@ -1093,10 +1093,10 @@ namespace bimGeometry
 		}
 	}
 
-	inline void AddSweepCircularCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps)
+	inline void AddSweepCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps)
 	{
 		const std::vector<glm::dvec3> emptyInnerCurve;
-		AddSweepCircularCapWithHoles(geom, curve, emptyInnerCurve, normalWanted, eps);
+		AddSweepCapWithHoles(geom, curve, emptyInnerCurve, normalWanted, eps);
 	}
 
 	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool cap = false, const double innerRadius = 0.0)
@@ -1363,13 +1363,13 @@ namespace bimGeometry
 			double capEps = EPS_SMALL * scaling;
 			if (hasInner && innerCurves.size() == curves.size())
 			{
-				AddSweepCircularCapWithHoles(geom, curves.front(), innerCurves.front(), -startDir, capEps);
-				AddSweepCircularCapWithHoles(geom, curves.back(), innerCurves.back(), endDir, capEps);
+				AddSweepCapWithHoles(geom, curves.front(), innerCurves.front(), -startDir, capEps);
+				AddSweepCapWithHoles(geom, curves.back(), innerCurves.back(), endDir, capEps);
 			}
 			else
 			{
-				AddSweepCircularCap(geom, curves.front(), -startDir, capEps);
-				AddSweepCircularCap(geom, curves.back(), endDir, capEps);
+				AddSweepCap(geom, curves.front(), -startDir, capEps);
+				AddSweepCap(geom, curves.back(), endDir, capEps);
 			}
 		}
 
