@@ -853,13 +853,12 @@ namespace webifc::geometry
                 auto directrixRef = _loader.GetRefArgument();
 
                 double radius = _loader.GetDoubleArgument();
-                // double innerRadius = 0.0;
+                double innerRadius = 0.0;
 
                 if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
                 {
-                    spdlog::error("[GetMesh()] Inner radius of IFCSWEPTDISKSOLID currently not supported {}", expressID);
                     _loader.StepBack();
-                    _loader.GetDoubleArgument();
+                    innerRadius = _loader.GetDoubleArgument();
                 }
 
                 // double startParam = 0;
@@ -885,8 +884,12 @@ namespace webifc::geometry
 
                 IfcProfile profile;
                 profile.curve = GetCircleCurve(radius, _settings._circleSegments);
+                if (innerRadius > EPS_SMALL && innerRadius < radius - EPS_SMALL)
+                {
+                    profile.holes.push_back(GetCircleCurve(innerRadius, _settings._circleSegments));
+                }
 
-                IfcGeometry geom = SweepCircular(_geometryLoader.GetLinearScalingFactor(), closed, profile, radius, directrix, glm::dvec3(0), false, true);
+                IfcGeometry geom = SweepCircular(_geometryLoader.GetLinearScalingFactor(), closed, profile, radius, directrix, glm::dvec3(0), false, true, innerRadius);
 
                 geom.sweptDiskSolid.axis = std::vector<IfcCurve>{directrix};
                 geom.sweptDiskSolid.profiles = std::vector<IfcProfile>{profile};
