@@ -996,43 +996,65 @@ namespace bimGeometry
 		return geom;
 	}
 
-	inline void AddSweepCircularCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps)
+	inline void AddSweepCircularCapWithHoles(Geometry &geom, const std::vector<glm::dvec3> &outerCurve, const std::vector<glm::dvec3> &innerCurve, const glm::dvec3 &normalWanted, const double eps)
 	{
-		std::vector<glm::dvec3> capProfile = curve;
-		if (capProfile.size() < 3)
+		std::vector<glm::dvec3> outerProfile = outerCurve;
+		if (outerProfile.size() < 3)
 		{
 			return;
 		}
-		if (glm::distance(capProfile.front(), capProfile.back()) < eps)
+		if (glm::distance(outerProfile.front(), outerProfile.back()) < eps)
 		{
-			capProfile.pop_back();
+			outerProfile.pop_back();
 		}
-		if (capProfile.size() < 3)
+		if (outerProfile.size() < 3)
 		{
 			return;
 		}
 
-		std::vector<Point> poly3D;
-		poly3D.reserve(capProfile.size());
-		for (const auto &p : capProfile)
+		std::vector<glm::dvec3> innerProfile = innerCurve;
+		if (innerProfile.size() >= 3 && glm::distance(innerProfile.front(), innerProfile.back()) < eps)
 		{
-			poly3D.push_back({p.x, p.y, p.z});
+			innerProfile.pop_back();
 		}
 
-		Projection proj = bestProjection(poly3D);
-		std::vector<std::vector<Point>> poly3DVec = {poly3D};
-		std::vector<std::vector<Point>> poly2D = projectTo2D(poly3DVec, proj);
-
-		std::vector<std::vector<std::array<double, 2>>> polygon(1);
-		for (const auto &pt : poly2D[0])
+		std::vector<std::vector<Point>> polygon;
+		polygon.emplace_back();
+		for (const auto &p : outerProfile)
 		{
-			polygon[0].push_back({pt[0], pt[1]});
+			polygon[0].push_back({p.x, p.y, p.z});
 		}
 
-		std::vector<uint32_t> capIndices = mapbox::earcut<uint32_t>(polygon);
+		bool hasInner = innerProfile.size() >= 3;
+		if (hasInner)
+		{
+			polygon.emplace_back();
+			for (const auto &p : innerProfile)
+			{
+				polygon[1].push_back({p.x, p.y, p.z});
+			}
+		}
+
+		Projection proj = bestProjection(polygon[0]);
+		std::vector<std::vector<Point>> polygon2D = projectTo2D(polygon, proj);
+		std::vector<uint32_t> capIndices = mapbox::earcut<uint32_t>(polygon2D);
 		if (capIndices.size() < 3)
 		{
 			return;
+		}
+
+		std::vector<glm::dvec3> capProfile;
+		capProfile.reserve(outerProfile.size() + innerProfile.size());
+		for (const auto &p : outerProfile)
+		{
+			capProfile.push_back(p);
+		}
+		if (hasInner)
+		{
+			for (const auto &p : innerProfile)
+			{
+				capProfile.push_back(p);
+			}
 		}
 
 		bool flipWinding = false;
@@ -1061,9 +1083,27 @@ namespace bimGeometry
 		}
 	}
 
-	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool cap = false)
+	inline void AddSweepCircularCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps)
+	{
+		const std::vector<glm::dvec3> emptyInnerCurve;
+		AddSweepCircularCapWithHoles(geom, curve, emptyInnerCurve, normalWanted, eps);
+	}
+
+	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool cap = false, const double innerRadius = 0.0)
 	{
 		Geometry geom;
+		double outerRadius = radius;
+		bool hasInner = innerRadius > EPS_SMALL && outerRadius > EPS_SMALL && innerRadius < outerRadius - EPS_SMALL;
+		std::vector<glm::dvec3> innerProfile;
+		if (hasInner)
+		{
+			double scale = innerRadius / outerRadius;
+			innerProfile.reserve(profile.size());
+			for (const auto &pt : profile)
+			{
+				innerProfile.push_back(pt * scale);
+			}
+		}
 
 		std::vector<glm::vec<3, glm::f64>> dpts;
 
@@ -1105,11 +1145,13 @@ namespace bimGeometry
 
 		// compute curve for each part of the directrix
 		std::vector<std::vector<glm::dvec3>> curves;
+		std::vector<std::vector<glm::dvec3>> innerCurves;
 		std::vector<glm::dmat4> transforms;
 
 		for (size_t i = 0; i < dpts.size(); i++)
 		{
 			std::vector<glm::dvec3> segmentForCurve;
+			std::vector<glm::dvec3> innerSegmentForCurve;
 
 			glm::dvec3 directrix2;
 			glm::dvec3 planeNormal;
@@ -1238,6 +1280,21 @@ namespace bimGeometry
 
 					segmentForCurve.push_back(proj);
 				}
+				if (hasInner)
+				{
+					auto &innerPpts = innerProfile;
+					for (auto &pt2D : innerPpts)
+					{
+						glm::dvec3 pt = -pt2D.x * left + -pt2D.y * right + planeOrigin;
+						if (rotate90)
+						{
+							pt = -pt2D.x * right - pt2D.y * left + planeOrigin;
+						}
+						glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
+
+						innerSegmentForCurve.push_back(proj);
+					}
+				}
 			}
 			else
 			{
@@ -1251,11 +1308,26 @@ namespace bimGeometry
 
 					segmentForCurve.push_back(proj);
 				}
+				if (hasInner && !innerCurves.empty())
+				{
+					const std::vector<glm::dvec3> &prevInnerCurve = innerCurves.back();
+					auto &innerPpts = prevInnerCurve;
+					for (auto &pt : innerPpts)
+					{
+						glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
+
+						innerSegmentForCurve.push_back(proj);
+					}
+				}
 			}
 
 			if (!closed || (i != 0 && i != dpts.size() - 1))
 			{
 				curves.push_back(segmentForCurve);
+				if (hasInner)
+				{
+					innerCurves.push_back(innerSegmentForCurve);
+				}
 			}
 		}
 
@@ -1290,6 +1362,22 @@ namespace bimGeometry
 				geom.AddFace(tl, br, bl);
 				geom.AddFace(tl, tr, br);
 			}
+			if (hasInner && innerCurves.size() == curves.size())
+			{
+				const auto &ic1 = innerCurves[i - 1];
+				const auto &ic2 = innerCurves[i];
+				uint32_t innerCapSize = ic1.size();
+				for (size_t j = 1; j < innerCapSize; j++)
+				{
+					glm::dvec3 bl = ic1[j - 1];
+					glm::dvec3 br = ic1[j - 0];
+					glm::dvec3 tl = ic2[j - 1];
+					glm::dvec3 tr = ic2[j - 0];
+
+					geom.AddFace(tl, bl, br);
+					geom.AddFace(tl, br, tr);
+				}
+			}
 		}
 
 		if (cap && !closed && dpts.size() >= 2 && curves.size() >= 2)
@@ -1298,8 +1386,16 @@ namespace bimGeometry
 			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
 
 			double capEps = EPS_SMALL * scaling;
-			AddSweepCircularCap(geom, curves.front(), -startDir, capEps);
-			AddSweepCircularCap(geom, curves.back(), endDir, capEps);
+			if (hasInner && innerCurves.size() == curves.size())
+			{
+				AddSweepCircularCapWithHoles(geom, curves.front(), innerCurves.front(), -startDir, capEps);
+				AddSweepCircularCapWithHoles(geom, curves.back(), innerCurves.back(), endDir, capEps);
+			}
+			else
+			{
+				AddSweepCircularCap(geom, curves.front(), -startDir, capEps);
+				AddSweepCircularCap(geom, curves.back(), endDir, capEps);
+			}
 		}
 
 		return geom;
