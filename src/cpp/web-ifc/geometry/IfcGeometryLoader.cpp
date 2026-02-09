@@ -3568,7 +3568,7 @@ namespace webifc::geometry
       bool hasFillet = filletRadius > 0;
       double edgeRadius = _loader.GetOptionalDoubleParam(0);
 
-      profile.curve = GetZShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, placement);
+      profile.curve = GetZShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, placement, _circleSegments);
 
       return profile;
     }
