@@ -2056,10 +2056,9 @@ namespace bimGeometry
 	inline Curve GetZShapedCurve(double depth, double flangeWidth, double webThickness, double flangeThickness, double filletRadius, double edgeRadius, glm::dmat4 placement = glm::dmat4(1))
 	{
 		Curve c;
-		double hw = flangeWidth / 2;
 		double hd = depth / 2;
 		double hweb = webThickness / 2;
-		// double hfla = flangeThickness / 2;
+		double hw = flangeWidth - hweb;
 
 		c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
 		c.points.push_back(placement * glm::dvec4(hweb, hd, 0, 1));
