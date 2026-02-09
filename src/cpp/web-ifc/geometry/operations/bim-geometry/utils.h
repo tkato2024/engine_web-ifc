@@ -1879,39 +1879,148 @@ namespace bimGeometry
 		return c;
 	}
 
-	inline Curve GetTShapedCurve(double width, double depth, double webThickness, double flangeThickness, bool hasFillet, double filletRadius, double edgeRadius, double legSlope, glm::dmat4 placement = glm::dmat4(1))
+	inline Curve GetTShapedCurve(double width, double depth, double webThickness, double flangeThickness, bool hasFillet, double filletRadius, double flangeEdgeRadius, double webEdgeRadius, double legSlope, glm::dmat4 placement = glm::dmat4(1), int numSegments = 8)
 	{
 		Curve c;
 
 		double hw = width / 2;
 		double hd = depth / 2;
 		double hweb = webThickness / 2;
+		double yTop = hd;
+		double yFlangeBottom = hd - flangeThickness;
+		double yBottom = -hd;
+		double rFillet = hasFillet ? filletRadius : 0;
+		double rFlange = flangeEdgeRadius;
+		double rWeb = webEdgeRadius;
 
-		c.points.push_back(placement * glm::dvec4(hw, hd, 0, 1));
-
-		if (hasFillet)
+		if (rFillet > 0 || rFlange > 0 || rWeb > 0)
 		{
-			// TODO: Create interpolation and sloped lines
-			c.points.push_back(placement * glm::dvec4(hw, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(hweb, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(hweb, -hd, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hweb, -hd, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hweb, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hw, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
+
+			c.Add(glm::dvec3(placement * glm::dvec4(hw, yTop, 0, 1)));
+
+			if (rFlange > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(hw, yFlangeBottom + rFlange, 0, 1)));
+
+				glm::dmat3 placementOuterTR = glm::dmat3(1);
+				placementOuterTR[2][0] = hw - rFlange;
+				placementOuterTR[2][1] = yFlangeBottom + rFlange;
+				std::vector<glm::dvec3> roundOuterTR = (bimGeometry::GetEllipseCurve(rFlange, rFlange, numSegments, placementOuterTR, 0, -CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundOuterTR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundOuterTR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(hw, yFlangeBottom, 0, 1)));
+			}
+
+			if (rFillet > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(hweb + rFillet, yFlangeBottom, 0, 1)));
+
+				glm::dmat3 placementInnerTR = glm::dmat3(1);
+				placementInnerTR[2][0] = hweb + rFillet;
+				placementInnerTR[2][1] = yFlangeBottom - rFillet;
+				std::vector<glm::dvec3> roundInnerTR = (bimGeometry::GetEllipseCurve(rFillet, rFillet, numSegments, placementInnerTR, CONST_PI / 2, CONST_PI)).points;
+				for (size_t i = 0; i < roundInnerTR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundInnerTR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(hweb, yFlangeBottom, 0, 1)));
+			}
+
+			if (rWeb > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(hweb, yBottom + rWeb, 0, 1)));
+
+				glm::dmat3 placementWebBR = glm::dmat3(1);
+				placementWebBR[2][0] = hweb - rWeb;
+				placementWebBR[2][1] = yBottom + rWeb;
+				std::vector<glm::dvec3> roundWebBR = (bimGeometry::GetEllipseCurve(rWeb, rWeb, numSegments, placementWebBR, 0, -CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundWebBR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundWebBR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(hweb, yBottom, 0, 1)));
+			}
+
+			if (rWeb > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-hweb + rWeb, yBottom, 0, 1)));
+
+				glm::dmat3 placementWebBL = glm::dmat3(1);
+				placementWebBL[2][0] = -hweb + rWeb;
+				placementWebBL[2][1] = yBottom + rWeb;
+				std::vector<glm::dvec3> roundWebBL = (bimGeometry::GetEllipseCurve(rWeb, rWeb, numSegments, placementWebBL, -CONST_PI / 2, -CONST_PI)).points;
+				for (size_t i = 0; i < roundWebBL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundWebBL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-hweb, yBottom, 0, 1)));
+			}
+
+			if (rFillet > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-hweb, yFlangeBottom - rFillet, 0, 1)));
+
+				glm::dmat3 placementInnerTL = glm::dmat3(1);
+				placementInnerTL[2][0] = -hweb - rFillet;
+				placementInnerTL[2][1] = yFlangeBottom - rFillet;
+				std::vector<glm::dvec3> roundInnerTL = (bimGeometry::GetEllipseCurve(rFillet, rFillet, numSegments, placementInnerTL, 0, CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundInnerTL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundInnerTL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-hweb, yFlangeBottom, 0, 1)));
+			}
+
+			if (rFlange > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-hw + rFlange, yFlangeBottom, 0, 1)));
+
+				glm::dmat3 placementOuterTL = glm::dmat3(1);
+				placementOuterTL[2][0] = -hw + rFlange;
+				placementOuterTL[2][1] = yFlangeBottom + rFlange;
+				std::vector<glm::dvec3> roundOuterTL = (bimGeometry::GetEllipseCurve(rFlange, rFlange, numSegments, placementOuterTL, -CONST_PI / 2, -CONST_PI)).points;
+				for (size_t i = 0; i < roundOuterTL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundOuterTL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-hw, yFlangeBottom, 0, 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw, yTop, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(hw, yTop, 0, 1)));
 		}
 		else
 		{
-			c.points.push_back(placement * glm::dvec4(hw, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(hweb, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(hweb, -hd, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hweb, -hd, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hweb, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hw, hd - flangeThickness, 0, 1));
-			c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
+			c.points.push_back(placement * glm::dvec4(hw, yTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(hw, yFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(hweb, yFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(hweb, yBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-hweb, yBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-hweb, yFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-hw, yFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-hw, yTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(hw, yTop, 0, 1));
 		}
-
-		c.points.push_back(placement * glm::dvec4(hw, hd, 0, 1));
 
 		if (MatrixFlipsTriangles(placement))
 		{
