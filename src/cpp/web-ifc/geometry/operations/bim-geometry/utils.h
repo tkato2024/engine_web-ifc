@@ -1921,23 +1921,117 @@ namespace bimGeometry
 		return c;
 	}
 
-	inline Curve GetCShapedCurve(double width, double depth, double girth, double thickness, bool hasFillet, double filletRadius, glm::dmat4 placement = glm::dmat4(1))
+	inline Curve GetCShapedCurve(double width, double depth, double girth, double thickness, bool hasFillet, double filletRadius, glm::dmat4 placement = glm::dmat4(1), int numSegments = 8)
 	{
 		Curve c;
 
 		double hw = width / 2;
 		double hd = depth / 2;
-		// double hweb = thickness / 2;
-
-		c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
-		c.points.push_back(placement * glm::dvec4(hw, hd, 0, 1));
-
-		if (hasFillet)
+		double rInner = filletRadius;
+		double rOuter = filletRadius + thickness;
+		if (hasFillet && rInner > 0)
 		{
-			// TODO: Create interpolation and sloped lines
+			const int filletSegments = numSegments;
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw + rOuter, hd, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(hw - rOuter, hd, 0, 1)));
+
+			glm::dmat3 placementOuterTR = glm::dmat3(1);
+			placementOuterTR[2][0] = hw - rOuter;
+			placementOuterTR[2][1] = hd - rOuter;
+			std::vector<glm::dvec3> roundOuterTR = (bimGeometry::GetEllipseCurve(rOuter, rOuter, filletSegments, placementOuterTR, CONST_PI / 2, 0)).points;
+			for (size_t i = 0; i < roundOuterTR.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundOuterTR[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(hw, hd - girth, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(hw - thickness, hd - girth, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(hw - thickness, hd - thickness - rInner, 0, 1)));
+
+			glm::dmat3 placementTR = glm::dmat3(1);
+			placementTR[2][0] = hw - thickness - rInner;
+			placementTR[2][1] = hd - thickness - rInner;
+			std::vector<glm::dvec3> roundTR = (bimGeometry::GetEllipseCurve(rInner, rInner, filletSegments, placementTR, 0, CONST_PI / 2)).points;
+			for (size_t i = 0; i < roundTR.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundTR[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw + thickness + rInner, hd - thickness, 0, 1)));
+
+			glm::dmat3 placementTL = glm::dmat3(1);
+			placementTL[2][0] = -hw + thickness + rInner;
+			placementTL[2][1] = hd - thickness - rInner;
+			std::vector<glm::dvec3> roundTL = (bimGeometry::GetEllipseCurve(rInner, rInner, filletSegments, placementTL, CONST_PI / 2, CONST_PI)).points;
+			for (size_t i = 0; i < roundTL.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundTL[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw + thickness, -hd + thickness + rInner, 0, 1)));
+
+			glm::dmat3 placementBL = glm::dmat3(1);
+			placementBL[2][0] = -hw + thickness + rInner;
+			placementBL[2][1] = -hd + thickness + rInner;
+			std::vector<glm::dvec3> roundBL = (bimGeometry::GetEllipseCurve(rInner, rInner, filletSegments, placementBL, CONST_PI, 3 * CONST_PI / 2)).points;
+			for (size_t i = 0; i < roundBL.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundBL[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(hw - thickness - rInner, -hd + thickness, 0, 1)));
+
+			glm::dmat3 placementBR = glm::dmat3(1);
+			placementBR[2][0] = hw - thickness - rInner;
+			placementBR[2][1] = -hd + thickness + rInner;
+			std::vector<glm::dvec3> roundBR = (bimGeometry::GetEllipseCurve(rInner, rInner, filletSegments, placementBR, 3 * CONST_PI / 2, 2 * CONST_PI)).points;
+			for (size_t i = 0; i < roundBR.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundBR[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(hw - thickness, -hd + girth, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(hw, -hd + girth, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(hw, -hd + rOuter, 0, 1)));
+
+			glm::dmat3 placementOuterBR = glm::dmat3(1);
+			placementOuterBR[2][0] = hw - rOuter;
+			placementOuterBR[2][1] = -hd + rOuter;
+			std::vector<glm::dvec3> roundOuterBR = (bimGeometry::GetEllipseCurve(rOuter, rOuter, filletSegments, placementOuterBR, 0, -CONST_PI / 2)).points;
+			for (size_t i = 0; i < roundOuterBR.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundOuterBR[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw + rOuter, -hd, 0, 1)));
+
+			glm::dmat3 placementOuterBL = glm::dmat3(1);
+			placementOuterBL[2][0] = -hw + rOuter;
+			placementOuterBL[2][1] = -hd + rOuter;
+			std::vector<glm::dvec3> roundOuterBL = (bimGeometry::GetEllipseCurve(rOuter, rOuter, filletSegments, placementOuterBL, -CONST_PI / 2, -CONST_PI)).points;
+			for (size_t i = 0; i < roundOuterBL.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundOuterBL[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw, hd - rOuter, 0, 1)));
+
+			glm::dmat3 placementOuterTL = glm::dmat3(1);
+			placementOuterTL[2][0] = -hw + rOuter;
+			placementOuterTL[2][1] = hd - rOuter;
+			std::vector<glm::dvec3> roundOuterTL = (bimGeometry::GetEllipseCurve(rOuter, rOuter, filletSegments, placementOuterTL, CONST_PI, CONST_PI / 2)).points;
+			for (size_t i = 0; i < roundOuterTL.size(); i++)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(roundOuterTL[i], 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-hw + rOuter, hd, 0, 1)), false);
 		}
 		else
 		{
+			c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
+			c.points.push_back(placement * glm::dvec4(hw, hd, 0, 1));
 			c.points.push_back(placement * glm::dvec4(hw, hd - girth, 0, 1));
 			c.points.push_back(placement * glm::dvec4(hw - thickness, hd - girth, 0, 1));
 			c.points.push_back(placement * glm::dvec4(hw - thickness, hd - thickness, 0, 1));
@@ -1948,9 +2042,8 @@ namespace bimGeometry
 			c.points.push_back(placement * glm::dvec4(hw, -hd + girth, 0, 1));
 			c.points.push_back(placement * glm::dvec4(hw, -hd, 0, 1));
 			c.points.push_back(placement * glm::dvec4(-hw, -hd, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
 		}
-
-		c.points.push_back(placement * glm::dvec4(-hw, hd, 0, 1));
 
 		if (MatrixFlipsTriangles(placement))
 		{

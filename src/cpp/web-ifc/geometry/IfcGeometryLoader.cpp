@@ -3534,7 +3534,7 @@ namespace webifc::geometry
       // double ventreOfGravityInX =
       _loader.GetOptionalDoubleParam(0);
 
-      profile.curve = GetCShapedCurve(Width, depth, girth, Thickness, hasFillet, filletRadius, placement);
+      profile.curve = GetCShapedCurve(Width, depth, girth, Thickness, hasFillet, filletRadius, placement, _circleSegments);
 
       return profile;
     }
