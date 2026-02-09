@@ -3555,7 +3555,7 @@ namespace webifc::geometry
         _loader.StepBack();
 
         uint32_t placementID = _loader.GetRefArgument();
-        glm::dmat3 placement = GetAxis2Placement2D(placementID);
+        placement = GetAxis2Placement2D(placementID);
       }
 
       _loader.MoveToArgumentOffset(expressID, 3);
@@ -3568,7 +3568,7 @@ namespace webifc::geometry
       bool hasFillet = filletRadius > 0;
       double edgeRadius = _loader.GetOptionalDoubleParam(0);
 
-      profile.curve = GetZShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, placement);
+      profile.curve = GetZShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, placement, _circleSegments);
 
       return profile;
     }
