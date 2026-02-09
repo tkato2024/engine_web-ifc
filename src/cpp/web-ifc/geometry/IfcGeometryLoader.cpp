@@ -3278,7 +3278,7 @@ namespace webifc::geometry
       glm::dmat3 placement = GetAxis2Placement2D(placementID);
 
       profile.curve = GetRectangleCurve(xdim, ydim, placement, _circleSegments, outerRadius);
-      profile.holes.push_back(GetRectangleCurve(xdim - thickness, ydim - thickness, placement, _circleSegments, innerRadius));
+      profile.holes.push_back(GetRectangleCurve(xdim - thickness * 2.0, ydim - thickness * 2.0, placement, _circleSegments, innerRadius));
 
       std::reverse(profile.holes[0].points.begin(), profile.holes[0].points.end());
 
