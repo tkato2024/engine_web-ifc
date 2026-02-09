@@ -3231,11 +3231,19 @@ namespace webifc::geometry
       uint32_t placementID = _loader.GetRefArgument();
       double xdim = _loader.GetDoubleArgument();
       double ydim = _loader.GetDoubleArgument();
+      double roundingRadius = 0.0;
+      bool isRounded = lineType == schema::IFCROUNDEDRECTANGLEPROFILEDEF;
+
+      if (isRounded && _loader.GetTokenType() == parsing::IfcTokenType::REAL)
+      {
+        _loader.StepBack();
+        roundingRadius = _loader.GetDoubleArgument();
+      }
 
       if (placementID != 0)
       {
         glm::dmat3 placement = GetAxis2Placement2D(placementID);
-        profile.curve = GetRectangleCurve(xdim, ydim, placement);
+        profile.curve = GetRectangleCurve(xdim, ydim, placement, _circleSegments, roundingRadius);
       }
       else
       {
@@ -3243,7 +3251,7 @@ namespace webifc::geometry
             glm::dvec3(1, 0, 0),
             glm::dvec3(0, 1, 0),
             glm::dvec3(0, 0, 1));
-        profile.curve = GetRectangleCurve(xdim, ydim, placement);
+        profile.curve = GetRectangleCurve(xdim, ydim, placement, _circleSegments, roundingRadius);
       }
       return profile;
     }
