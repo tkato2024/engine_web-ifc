@@ -3395,6 +3395,85 @@ namespace webifc::geometry
 
       return profile;
     }
+    case schema::IFCASYMMETRICISHAPEPROFILEDEF:
+    {
+      IfcProfile profile;
+      const IFC_SCHEMA schema = _loader.GetSchema();
+
+      _loader.MoveToArgumentOffset(expressID, 0);
+      profile.type = _loader.GetStringArgument();
+      profile.isConvex = true;
+
+      _loader.MoveToArgumentOffset(expressID, 2);
+
+      glm::dmat3 placement(1);
+
+      if (_loader.GetTokenType() == parsing::IfcTokenType::REF)
+      {
+        _loader.StepBack();
+
+        uint32_t placementID = _loader.GetRefArgument();
+        placement = GetAxis2Placement2D(placementID);
+      }
+
+      _loader.MoveToArgumentOffset(expressID, 3);
+
+      double topWidth = 0;
+      double bottomWidth = 0;
+      double depth = 0;
+      double webThickness = 0;
+      double topThickness = 0;
+      double bottomThickness = 0;
+      double topFilletRadius = 0;
+      double bottomFilletRadius = 0;
+      double topEdgeRadius = 0;
+      double bottomEdgeRadius = 0;
+
+      if (schema == IFC2X3)
+      {
+        double overallWidth = _loader.GetDoubleArgument();
+        depth = _loader.GetDoubleArgument();
+        webThickness = _loader.GetDoubleArgument();
+        bottomThickness = _loader.GetDoubleArgument();
+        bottomFilletRadius = _loader.GetOptionalDoubleParam(0);
+        topWidth = _loader.GetDoubleArgument();
+        topThickness = _loader.GetOptionalDoubleParam(0);
+        if (topThickness == 0)
+        {
+          topThickness = bottomThickness;
+        }
+        topFilletRadius = _loader.GetOptionalDoubleParam(0);
+        // double centreOfGravityInY =
+        _loader.GetOptionalDoubleParam(0);
+
+        bottomWidth = overallWidth;
+      }
+      else
+      {
+        bottomWidth = _loader.GetDoubleArgument();
+        depth = _loader.GetDoubleArgument();
+        webThickness = _loader.GetDoubleArgument();
+        bottomThickness = _loader.GetDoubleArgument();
+        bottomFilletRadius = _loader.GetOptionalDoubleParam(0);
+        topWidth = _loader.GetDoubleArgument();
+        topThickness = _loader.GetOptionalDoubleParam(0);
+        if (topThickness == 0)
+        {
+          topThickness = bottomThickness;
+        }
+        topFilletRadius = _loader.GetOptionalDoubleParam(0);
+        bottomEdgeRadius = _loader.GetOptionalDoubleParam(0);
+        // double bottomFlangeSlope =
+        _loader.GetOptionalDoubleParam(0);
+        topEdgeRadius = _loader.GetOptionalDoubleParam(0);
+        // double topFlangeSlope =
+        _loader.GetOptionalDoubleParam(0);
+      }
+
+      profile.curve = GetAsymmetricIShapedCurve(topWidth, bottomWidth, depth, webThickness, topThickness, bottomThickness, topFilletRadius, bottomFilletRadius, topEdgeRadius, bottomEdgeRadius, placement, _circleSegments);
+
+      return profile;
+    }
     case schema::IFCLSHAPEPROFILEDEF:
     {
       IfcProfile profile;
