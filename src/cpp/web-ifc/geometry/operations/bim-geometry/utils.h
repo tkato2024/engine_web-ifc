@@ -1717,56 +1717,207 @@ namespace bimGeometry
 		}
 	}
 
-	inline Curve GetIShapedCurve(double width, double depth, double webThickness, double flangeThickness, bool hasFillet, double filletRadius, glm::dmat4 placement = glm::dmat4(1))
+	inline Curve GetAsymmetricIShapedCurve(double topWidth, double bottomWidth, double depth, double webThickness, double topFlangeThickness, double bottomFlangeThickness, double topFilletRadius, double bottomFilletRadius, double topEdgeRadius, double bottomEdgeRadius, glm::dmat4 placement, int numSegments);
+
+	inline Curve GetIShapedCurve(double width, double depth, double webThickness, double flangeThickness, bool hasFillet, double filletRadius, glm::dmat4 placement = glm::dmat4(1), double flangeEdgeRadius = 0, int numSegments = 8)
+	{
+		double rFillet = hasFillet ? filletRadius : 0;
+		double rEdge = flangeEdgeRadius;
+
+		return GetAsymmetricIShapedCurve(width, width, depth, webThickness, flangeThickness, flangeThickness, rFillet, rFillet, rEdge, rEdge, placement, numSegments);
+	}
+
+	inline Curve GetAsymmetricIShapedCurve(double topWidth, double bottomWidth, double depth, double webThickness, double topFlangeThickness, double bottomFlangeThickness, double topFilletRadius, double bottomFilletRadius, double topEdgeRadius, double bottomEdgeRadius, glm::dmat4 placement = glm::dmat4(1), int numSegments = 8)
 	{
 		Curve c;
 
-		double hw = width / 2;
 		double hd = depth / 2;
-		double hweb = webThickness / 2;
+		double xTop = topWidth / 2;
+		double xBottom = bottomWidth / 2;
+		double xWeb = webThickness / 2;
 
-		c.points.push_back(placement * glm::dvec4(-hw, +hd, 0, 1));					  // TL
-		c.points.push_back(placement * glm::dvec4(+hw, +hd, 0, 1));					  // TR
-		c.points.push_back(placement * glm::dvec4(+hw, +hd - flangeThickness, 0, 1)); // TR knee
+		double yTop = hd;
+		double yBottom = -hd;
+		double yTopFlangeBottom = hd - topFlangeThickness;
+		double yBottomFlangeTop = -hd + bottomFlangeThickness;
 
-		if (hasFillet)
+		double rTopFillet = topFilletRadius;
+		double rBottomFillet = bottomFilletRadius;
+		double rTopEdge = topEdgeRadius;
+		double rBottomEdge = bottomEdgeRadius;
+
+		if (rTopFillet > 0 || rBottomFillet > 0 || rTopEdge > 0 || rBottomEdge > 0)
 		{
-			// TODO: interpolate
-			c.points.push_back(placement * glm::dvec4(+hweb + filletRadius, +hd - flangeThickness, 0, 1)); // TR elbow start
-			c.points.push_back(placement * glm::dvec4(+hweb, +hd - flangeThickness - filletRadius, 0, 1)); // TR elbow end
+			const int filletSegments = numSegments;
 
-			c.points.push_back(placement * glm::dvec4(+hweb, -hd + flangeThickness + filletRadius, 0, 1)); // BR elbow start
-			c.points.push_back(placement * glm::dvec4(+hweb + filletRadius, -hd + flangeThickness, 0, 1)); // BR elbow end
+			c.Add(glm::dvec3(placement * glm::dvec4(-xTop, yTop, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(xTop, yTop, 0, 1)));
+
+			if (rTopEdge > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xTop, yTopFlangeBottom + rTopEdge, 0, 1)));
+
+				glm::dmat3 placementEdgeTR = glm::dmat3(1);
+				placementEdgeTR[2][0] = xTop - rTopEdge;
+				placementEdgeTR[2][1] = yTopFlangeBottom + rTopEdge;
+				std::vector<glm::dvec3> roundEdgeTR = (bimGeometry::GetEllipseCurve(rTopEdge, rTopEdge, filletSegments, placementEdgeTR, 0, -CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundEdgeTR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundEdgeTR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xTop, yTopFlangeBottom, 0, 1)));
+			}
+
+			if (rTopFillet > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xWeb + rTopFillet, yTopFlangeBottom, 0, 1)));
+
+				glm::dmat3 placementInnerTR = glm::dmat3(1);
+				placementInnerTR[2][0] = xWeb + rTopFillet;
+				placementInnerTR[2][1] = yTopFlangeBottom - rTopFillet;
+				std::vector<glm::dvec3> roundInnerTR = (bimGeometry::GetEllipseCurve(rTopFillet, rTopFillet, filletSegments, placementInnerTR, CONST_PI / 2, CONST_PI)).points;
+				for (size_t i = 0; i < roundInnerTR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundInnerTR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xWeb, yTopFlangeBottom, 0, 1)));
+			}
+
+			if (rBottomFillet > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xWeb, yBottomFlangeTop + rBottomFillet, 0, 1)));
+
+				glm::dmat3 placementInnerBR = glm::dmat3(1);
+				placementInnerBR[2][0] = xWeb + rBottomFillet;
+				placementInnerBR[2][1] = yBottomFlangeTop + rBottomFillet;
+				std::vector<glm::dvec3> roundInnerBR = (bimGeometry::GetEllipseCurve(rBottomFillet, rBottomFillet, filletSegments, placementInnerBR, CONST_PI, 3 * CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundInnerBR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundInnerBR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xWeb, yBottomFlangeTop, 0, 1)));
+			}
+
+			if (rBottomEdge > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xBottom - rBottomEdge, yBottomFlangeTop, 0, 1)));
+
+				glm::dmat3 placementEdgeBR = glm::dmat3(1);
+				placementEdgeBR[2][0] = xBottom - rBottomEdge;
+				placementEdgeBR[2][1] = yBottomFlangeTop - rBottomEdge;
+				std::vector<glm::dvec3> roundEdgeBR = (bimGeometry::GetEllipseCurve(rBottomEdge, rBottomEdge, filletSegments, placementEdgeBR, CONST_PI / 2, 0)).points;
+				for (size_t i = 0; i < roundEdgeBR.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundEdgeBR[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(xBottom, yBottomFlangeTop, 0, 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(xBottom, yBottom, 0, 1)));
+			c.Add(glm::dvec3(placement * glm::dvec4(-xBottom, yBottom, 0, 1)));
+
+			if (rBottomEdge > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xBottom, yBottomFlangeTop - rBottomEdge, 0, 1)));
+
+				glm::dmat3 placementEdgeBL = glm::dmat3(1);
+				placementEdgeBL[2][0] = -xBottom + rBottomEdge;
+				placementEdgeBL[2][1] = yBottomFlangeTop - rBottomEdge;
+				std::vector<glm::dvec3> roundEdgeBL = (bimGeometry::GetEllipseCurve(rBottomEdge, rBottomEdge, filletSegments, placementEdgeBL, -CONST_PI, -3 * CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundEdgeBL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundEdgeBL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xBottom, yBottomFlangeTop, 0, 1)));
+			}
+
+			if (rBottomFillet > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xWeb - rBottomFillet, yBottomFlangeTop, 0, 1)));
+
+				glm::dmat3 placementInnerBL = glm::dmat3(1);
+				placementInnerBL[2][0] = -xWeb - rBottomFillet;
+				placementInnerBL[2][1] = yBottomFlangeTop + rBottomFillet;
+				std::vector<glm::dvec3> roundInnerBL = (bimGeometry::GetEllipseCurve(rBottomFillet, rBottomFillet, filletSegments, placementInnerBL, -CONST_PI / 2, 0)).points;
+				for (size_t i = 0; i < roundInnerBL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundInnerBL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xWeb, yBottomFlangeTop, 0, 1)));
+			}
+
+			if (rTopFillet > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xWeb, yTopFlangeBottom - rTopFillet, 0, 1)));
+
+				glm::dmat3 placementInnerTL = glm::dmat3(1);
+				placementInnerTL[2][0] = -xWeb - rTopFillet;
+				placementInnerTL[2][1] = yTopFlangeBottom - rTopFillet;
+				std::vector<glm::dvec3> roundInnerTL = (bimGeometry::GetEllipseCurve(rTopFillet, rTopFillet, filletSegments, placementInnerTL, 0, CONST_PI / 2)).points;
+				for (size_t i = 0; i < roundInnerTL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundInnerTL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xWeb, yTopFlangeBottom, 0, 1)));
+			}
+
+			if (rTopEdge > 0)
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xTop + rTopEdge, yTopFlangeBottom, 0, 1)));
+
+				glm::dmat3 placementEdgeTL = glm::dmat3(1);
+				placementEdgeTL[2][0] = -xTop + rTopEdge;
+				placementEdgeTL[2][1] = yTopFlangeBottom + rTopEdge;
+				std::vector<glm::dvec3> roundEdgeTL = (bimGeometry::GetEllipseCurve(rTopEdge, rTopEdge, filletSegments, placementEdgeTL, -CONST_PI / 2, -CONST_PI)).points;
+				for (size_t i = 0; i < roundEdgeTL.size(); i++)
+				{
+					c.Add(glm::dvec3(placement * glm::dvec4(roundEdgeTL[i], 1)));
+				}
+			}
+			else
+			{
+				c.Add(glm::dvec3(placement * glm::dvec4(-xTop, yTopFlangeBottom, 0, 1)));
+			}
+
+			c.Add(glm::dvec3(placement * glm::dvec4(-xTop, yTop, 0, 1)));
 		}
 		else
 		{
-			c.points.push_back(placement * glm::dvec4(+hweb, +hd - flangeThickness, 0, 1)); // TR elbow
-			c.points.push_back(placement * glm::dvec4(+hweb, -hd + flangeThickness, 0, 1)); // BR elbow
+			c.points.push_back(placement * glm::dvec4(-xTop, yTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(xTop, yTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(xTop, yTopFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(xWeb, yTopFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(xWeb, yBottomFlangeTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(xBottom, yBottomFlangeTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(xBottom, yBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-xBottom, yBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-xBottom, yBottomFlangeTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-xWeb, yBottomFlangeTop, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-xWeb, yTopFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-xTop, yTopFlangeBottom, 0, 1));
+			c.points.push_back(placement * glm::dvec4(-xTop, yTop, 0, 1));
 		}
-
-		c.points.push_back(placement * glm::dvec4(+hw, -hd + flangeThickness, 0, 1)); // BR knee
-		c.points.push_back(placement * glm::dvec4(+hw, -hd, 0, 1));					  // BR
-
-		c.points.push_back(placement * glm::dvec4(-hw, -hd, 0, 1));					  // BL
-		c.points.push_back(placement * glm::dvec4(-hw, -hd + flangeThickness, 0, 1)); // BL knee
-
-		if (hasFillet)
-		{
-			// TODO: interpolate
-			c.points.push_back(placement * glm::dvec4(-hweb - filletRadius, -hd + flangeThickness, 0, 1)); // BL elbow start
-			c.points.push_back(placement * glm::dvec4(-hweb, -hd + flangeThickness + filletRadius, 0, 1)); // BL elbow end
-
-			c.points.push_back(placement * glm::dvec4(-hweb, +hd - flangeThickness - filletRadius, 0, 1)); // TL elbow start
-			c.points.push_back(placement * glm::dvec4(-hweb - filletRadius, +hd - flangeThickness, 0, 1)); // TL elbow end
-		}
-		else
-		{
-			c.points.push_back(placement * glm::dvec4(-hweb, -hd + flangeThickness, 0, 1)); // BL elbow
-			c.points.push_back(placement * glm::dvec4(-hweb, +hd - flangeThickness, 0, 1)); // TL elbow
-		}
-
-		c.points.push_back(placement * glm::dvec4(-hw, +hd - flangeThickness, 0, 1)); // TL knee
-		c.points.push_back(placement * glm::dvec4(-hw, +hd, 0, 1));					  // TL
 
 		if (MatrixFlipsTriangles(placement))
 		{
