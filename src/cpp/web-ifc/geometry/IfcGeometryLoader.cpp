@@ -3500,12 +3500,12 @@ namespace webifc::geometry
       // optional parameters
       double filletRadius = _loader.GetOptionalDoubleParam(0);
       bool hasFillet = filletRadius > 0;
-      // double edgeRadius = GetOptionalDoubleParam();
-      // double flangeSlope = GetOptionalDoubleParam();
-      double edgeRadius = 0;
+      double edgeRadius = _loader.GetOptionalDoubleParam(0);
+      // flangeSlope is intentionally not supported for U-shape
+      _loader.GetOptionalDoubleParam(0);
       double flangeSlope = 0;
 
-      profile.curve = GetUShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, flangeSlope, placement);
+      profile.curve = GetUShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, flangeSlope, placement, _circleSegments);
 
       return profile;
     }
