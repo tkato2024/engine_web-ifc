@@ -3363,6 +3363,7 @@ namespace webifc::geometry
     case schema::IFCISHAPEPROFILEDEF:
     {
       IfcProfile profile;
+      const IFC_SCHEMA schema = _loader.GetSchema();
 
       _loader.MoveToArgumentOffset(expressID, 0);
       profile.type = _loader.GetStringArgument();
@@ -3390,8 +3391,15 @@ namespace webifc::geometry
       // optional fillet
       double filletRadius = _loader.GetOptionalDoubleParam(0);
       bool hasFillet = filletRadius > 0;
+      double flangeEdgeRadius = 0;
+      if (schema != IFC2X3)
+      {
+        flangeEdgeRadius = _loader.GetOptionalDoubleParam(0);
+        // double flangeSlope =
+        _loader.GetOptionalDoubleParam(0);
+      }
 
-      profile.curve = GetIShapedCurve(width, depth, webThickness, flangeThickness, hasFillet, filletRadius, placement);
+      profile.curve = GetIShapedCurve(width, depth, webThickness, flangeThickness, hasFillet, filletRadius, placement, flangeEdgeRadius, _circleSegments);
 
       return profile;
     }

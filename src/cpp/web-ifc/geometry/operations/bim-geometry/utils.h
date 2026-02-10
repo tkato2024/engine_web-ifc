@@ -1717,63 +1717,14 @@ namespace bimGeometry
 		}
 	}
 
-	inline Curve GetIShapedCurve(double width, double depth, double webThickness, double flangeThickness, bool hasFillet, double filletRadius, glm::dmat4 placement = glm::dmat4(1))
+	inline Curve GetAsymmetricIShapedCurve(double topWidth, double bottomWidth, double depth, double webThickness, double topFlangeThickness, double bottomFlangeThickness, double topFilletRadius, double bottomFilletRadius, double topEdgeRadius, double bottomEdgeRadius, glm::dmat4 placement, int numSegments);
+
+	inline Curve GetIShapedCurve(double width, double depth, double webThickness, double flangeThickness, bool hasFillet, double filletRadius, glm::dmat4 placement = glm::dmat4(1), double flangeEdgeRadius = 0, int numSegments = 8)
 	{
-		Curve c;
+		double rFillet = hasFillet ? filletRadius : 0;
+		double rEdge = flangeEdgeRadius;
 
-		double hw = width / 2;
-		double hd = depth / 2;
-		double hweb = webThickness / 2;
-
-		c.points.push_back(placement * glm::dvec4(-hw, +hd, 0, 1));					  // TL
-		c.points.push_back(placement * glm::dvec4(+hw, +hd, 0, 1));					  // TR
-		c.points.push_back(placement * glm::dvec4(+hw, +hd - flangeThickness, 0, 1)); // TR knee
-
-		if (hasFillet)
-		{
-			// TODO: interpolate
-			c.points.push_back(placement * glm::dvec4(+hweb + filletRadius, +hd - flangeThickness, 0, 1)); // TR elbow start
-			c.points.push_back(placement * glm::dvec4(+hweb, +hd - flangeThickness - filletRadius, 0, 1)); // TR elbow end
-
-			c.points.push_back(placement * glm::dvec4(+hweb, -hd + flangeThickness + filletRadius, 0, 1)); // BR elbow start
-			c.points.push_back(placement * glm::dvec4(+hweb + filletRadius, -hd + flangeThickness, 0, 1)); // BR elbow end
-		}
-		else
-		{
-			c.points.push_back(placement * glm::dvec4(+hweb, +hd - flangeThickness, 0, 1)); // TR elbow
-			c.points.push_back(placement * glm::dvec4(+hweb, -hd + flangeThickness, 0, 1)); // BR elbow
-		}
-
-		c.points.push_back(placement * glm::dvec4(+hw, -hd + flangeThickness, 0, 1)); // BR knee
-		c.points.push_back(placement * glm::dvec4(+hw, -hd, 0, 1));					  // BR
-
-		c.points.push_back(placement * glm::dvec4(-hw, -hd, 0, 1));					  // BL
-		c.points.push_back(placement * glm::dvec4(-hw, -hd + flangeThickness, 0, 1)); // BL knee
-
-		if (hasFillet)
-		{
-			// TODO: interpolate
-			c.points.push_back(placement * glm::dvec4(-hweb - filletRadius, -hd + flangeThickness, 0, 1)); // BL elbow start
-			c.points.push_back(placement * glm::dvec4(-hweb, -hd + flangeThickness + filletRadius, 0, 1)); // BL elbow end
-
-			c.points.push_back(placement * glm::dvec4(-hweb, +hd - flangeThickness - filletRadius, 0, 1)); // TL elbow start
-			c.points.push_back(placement * glm::dvec4(-hweb - filletRadius, +hd - flangeThickness, 0, 1)); // TL elbow end
-		}
-		else
-		{
-			c.points.push_back(placement * glm::dvec4(-hweb, -hd + flangeThickness, 0, 1)); // BL elbow
-			c.points.push_back(placement * glm::dvec4(-hweb, +hd - flangeThickness, 0, 1)); // TL elbow
-		}
-
-		c.points.push_back(placement * glm::dvec4(-hw, +hd - flangeThickness, 0, 1)); // TL knee
-		c.points.push_back(placement * glm::dvec4(-hw, +hd, 0, 1));					  // TL
-
-		if (MatrixFlipsTriangles(placement))
-		{
-			c.Invert();
-		}
-
-		return c;
+		return GetAsymmetricIShapedCurve(width, width, depth, webThickness, flangeThickness, flangeThickness, rFillet, rFillet, rEdge, rEdge, placement, numSegments);
 	}
 
 	inline Curve GetAsymmetricIShapedCurve(double topWidth, double bottomWidth, double depth, double webThickness, double topFlangeThickness, double bottomFlangeThickness, double topFilletRadius, double bottomFilletRadius, double topEdgeRadius, double bottomEdgeRadius, glm::dmat4 placement = glm::dmat4(1), int numSegments = 8)
