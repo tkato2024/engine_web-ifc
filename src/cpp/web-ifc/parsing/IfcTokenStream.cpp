@@ -49,7 +49,12 @@ namespace webifc::parsing
 
   void IfcTokenStream::SetTokenSource(std::istream &requestData)
   { 
-     SetTokenSource([&](char* dest, size_t sourceOffset, size_t destSize) { requestData.seekg(sourceOffset); requestData.read(dest, destSize); return requestData.gcount();});
+     SetTokenSource([&](char* dest, size_t sourceOffset, size_t destSize) {
+       requestData.clear();
+       requestData.seekg(sourceOffset);
+       requestData.read(dest, destSize);
+       return requestData.gcount();
+     });
   }
   
   std::string_view IfcTokenStream::ReadString() 
