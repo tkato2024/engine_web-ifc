@@ -319,6 +319,7 @@ namespace bimGeometry
 	inline Curve GetEllipseCurve(float radiusX, float radiusY, int numSegments, glm::dmat3 placement = glm::dmat3(1), double startRad = 0, double endRad = CONST_PI * 2, bool swap = true, bool normalToCenterEnding = false)
 	{
 		Curve c;
+		const bool closed = equals(endRad, CONST_PI * 2, EPS_TINY_CURVE) && equals(startRad, 0.0, EPS_TINY_CURVE);
 		if (normalToCenterEnding)
 		{
 			double sweep_angle = (endRad - startRad);
@@ -363,7 +364,7 @@ namespace bimGeometry
 			c.points[c.points.size() - 1] = (c.points[c.points.size() - 1] + c.points[c.points.size() - 2]) * 0.5;
 
 			// check for a closed curve
-			if (endRad == CONST_PI * 2 && startRad == 0)
+			if (closed)
 			{
 				c.points.push_back(c.points[0]);
 
@@ -375,7 +376,6 @@ namespace bimGeometry
 		}
 		else
 		{
-			const bool closed = (endRad == CONST_PI * 2 && startRad == 0);
 			const double sweep = (endRad - startRad);
 			const int denom = closed ? numSegments : (numSegments - 1);
 			const double step = sweep / static_cast<double>(denom);			
