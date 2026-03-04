@@ -17,7 +17,8 @@ namespace webifc::geometry
 
   IfcGeometryLoader::IfcGeometryLoader(const webifc::parsing::IfcLoader &loader, const webifc::schema::IfcSchemaManager &schemaManager, uint16_t circleSegments, double TOLERANCE_PLANE_INTERSECTION, double TOLERANCE_PLANE_DEVIATION, double TOLERANCE_BACK_DEVIATION_DISTANCE, double TOLERANCE_INSIDE_OUTSIDE_PERIMETER, double TOLERANCE_SCALAR_EQUALITY, double PLANE_REFIT_ITERATIONS, double BOOLEAN_UNION_THRESHOLD)
       : _loader(loader), _schemaManager(schemaManager), _relVoids(PopulateRelVoidsMap()), _relNests(PopulateRelNestsMap()), _relAggregates(PopulateRelAggregatesMap()),
-        _styledItems(PopulateStyledItemMap()), _relMaterials(PopulateRelMaterialsMap()), _materialDefinitions(PopulateMaterialDefinitionsMap()), _circleSegments(circleSegments)
+        _styledItems(PopulateStyledItemMap()), _relMaterials(PopulateRelMaterialsMap()), _materialDefinitions(PopulateMaterialDefinitionsMap()),
+        _presentationLayerStyles(PopulatePresentationLayerStylesMap()), _circleSegments(circleSegments)
   {
     ReadLinearScalingFactor();
   }
@@ -30,6 +31,7 @@ namespace webifc::geometry
     _styledItems = PopulateStyledItemMap();
     _relMaterials = PopulateRelMaterialsMap();
     _materialDefinitions = PopulateMaterialDefinitionsMap();
+    _presentationLayerStyles = PopulatePresentationLayerStylesMap();
   }
 
   void IfcGeometryLoader::Clear() const
@@ -4510,6 +4512,53 @@ namespace webifc::geometry
     return resultVector;
   }
 
+  std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcGeometryLoader::PopulatePresentationLayerStylesMap()
+  {
+    std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
+    auto layers = _loader.GetExpressIDsWithType(schema::IFCPRESENTATIONLAYERWITHSTYLE);
+
+    for (uint32_t layerID : layers)
+    {
+      _loader.MoveToArgumentOffset(layerID, 2);
+      auto assignedItemsTokenType = _loader.GetTokenType();
+      _loader.StepBack();
+      if (assignedItemsTokenType != parsing::IfcTokenType::SET_BEGIN)
+      {
+        continue;
+      }
+      auto assignedItems = _loader.GetSetArgument();
+      if (assignedItems.empty())
+      {
+        continue;
+      }
+
+      _loader.MoveToArgumentOffset(layerID, 7);
+      auto layerStylesTokenType = _loader.GetTokenType();
+      _loader.StepBack();
+      if (layerStylesTokenType != parsing::IfcTokenType::SET_BEGIN)
+      {
+        continue;
+      }
+      auto layerStyles = _loader.GetSetArgument();
+      if (layerStyles.empty())
+      {
+        continue;
+      }
+
+      for (auto &assignedItem : assignedItems)
+      {
+        uint32_t assignedItemID = _loader.GetRefArgument(assignedItem);
+        for (auto &layerStyle : layerStyles)
+        {
+          uint32_t layerStyleID = _loader.GetRefArgument(layerStyle);
+          resultVector[assignedItemID].emplace_back(layerID, layerStyleID);
+        }
+      }
+    }
+
+    return resultVector;
+  }
+
   void IfcGeometryLoader::ReadLinearScalingFactor()
   {
     auto projects = _loader.GetExpressIDsWithType(schema::IFCPROJECT);
@@ -4691,6 +4740,11 @@ namespace webifc::geometry
     return _materialDefinitions;
   }
 
+  const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcGeometryLoader::GetPresentationLayerStyles() const
+  {
+    return _presentationLayerStyles;
+  }
+
   double IfcGeometryLoader::GetLinearScalingFactor() const
   {
     return _linearScalingFactor;
@@ -4794,12 +4848,12 @@ namespace webifc::geometry
 
   IfcGeometryLoader *IfcGeometryLoader::Clone(const webifc::parsing::IfcLoader &newLoader) const
   {
-    IfcGeometryLoader *newGeomLoader = new IfcGeometryLoader(newLoader, _schemaManager, _relVoids, _relNests, _relAggregates, _styledItems, _relMaterials, _materialDefinitions, _linearScalingFactor, _squaredScalingFactor, _cubicScalingFactor, _angularScalingFactor, _angleUnits, _circleSegments, _localCurvesList, _localcurvesIndices, _expressIDToPlacement);
+    IfcGeometryLoader *newGeomLoader = new IfcGeometryLoader(newLoader, _schemaManager, _relVoids, _relNests, _relAggregates, _styledItems, _relMaterials, _materialDefinitions, _presentationLayerStyles, _linearScalingFactor, _squaredScalingFactor, _cubicScalingFactor, _angularScalingFactor, _angleUnits, _circleSegments, _localCurvesList, _localcurvesIndices, _expressIDToPlacement);
     return newGeomLoader;
   }
 
-  IfcGeometryLoader::IfcGeometryLoader(const webifc::parsing::IfcLoader &loader, const webifc::schema::IfcSchemaManager &schemaManager, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relVoids, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relNests, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relAggregates, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &styledItems, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &relMaterials, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &materialDefinitions, double linearScalingFactor, double squaredScalingFactor, double cubicScalingFactor, double angularScalingFactor, std::string angleUnits, uint16_t circleSegments, std::vector<IfcCurve> &localCurvesList, std::vector<uint32_t> &localcurvesIndices, std::unordered_map<uint32_t, glm::dmat4> expressIDToPlacement)
-      : _loader(loader), _schemaManager(schemaManager), _relVoids(relVoids), _relNests(relNests), _relAggregates(relAggregates), _styledItems(styledItems), _relMaterials(relMaterials), _materialDefinitions(materialDefinitions), _linearScalingFactor(linearScalingFactor), _squaredScalingFactor(squaredScalingFactor), _cubicScalingFactor(cubicScalingFactor), _angularScalingFactor(angularScalingFactor), _angleUnits(angleUnits), _circleSegments(circleSegments), _localCurvesList(localCurvesList), _localcurvesIndices(localcurvesIndices), _expressIDToPlacement(expressIDToPlacement)
+  IfcGeometryLoader::IfcGeometryLoader(const webifc::parsing::IfcLoader &loader, const webifc::schema::IfcSchemaManager &schemaManager, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relVoids, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relNests, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relAggregates, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &styledItems, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &relMaterials, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &materialDefinitions, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &presentationLayerStyles, double linearScalingFactor, double squaredScalingFactor, double cubicScalingFactor, double angularScalingFactor, std::string angleUnits, uint16_t circleSegments, std::vector<IfcCurve> &localCurvesList, std::vector<uint32_t> &localcurvesIndices, std::unordered_map<uint32_t, glm::dmat4> expressIDToPlacement)
+      : _loader(loader), _schemaManager(schemaManager), _relVoids(relVoids), _relNests(relNests), _relAggregates(relAggregates), _styledItems(styledItems), _relMaterials(relMaterials), _materialDefinitions(materialDefinitions), _presentationLayerStyles(presentationLayerStyles), _linearScalingFactor(linearScalingFactor), _squaredScalingFactor(squaredScalingFactor), _cubicScalingFactor(cubicScalingFactor), _angularScalingFactor(angularScalingFactor), _angleUnits(angleUnits), _circleSegments(circleSegments), _localCurvesList(localCurvesList), _localcurvesIndices(localcurvesIndices), _expressIDToPlacement(expressIDToPlacement)
   {
   }
 
