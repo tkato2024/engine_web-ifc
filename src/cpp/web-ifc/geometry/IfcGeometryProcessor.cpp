@@ -88,52 +88,62 @@ namespace webifc::geometry
 
     std::optional<glm::dvec4> IfcGeometryProcessor::GetStyleItemFromExpressId(uint32_t expressID)
     {
-        std::optional<glm::dvec4> styledItemColor;
         auto &styledItems = _geometryLoader.GetStyledItems();
         auto &relMaterials = _geometryLoader.GetRelMaterials();
         auto &materialDefinitions = _geometryLoader.GetMaterialDefinitions();
+        auto &presentationLayerStyles = _geometryLoader.GetPresentationLayerStyles();
+
         auto styledItem = styledItems.find(expressID);
         if (styledItem != styledItems.end())
         {
             auto items = styledItem->second;
             for (auto item : items)
             {
-                styledItemColor = _geometryLoader.GetColor(item.second);
+                auto styledItemColor = _geometryLoader.GetColor(item.second);
                 if (styledItemColor)
-                    break;
+                    return styledItemColor;
             }
         }
 
-        if (!styledItemColor)
+        auto material = relMaterials.find(expressID);
+        if (material != relMaterials.end())
         {
-            auto material = relMaterials.find(expressID);
-            if (material != relMaterials.end())
+            auto &materials = material->second;
+            for (auto item : materials)
             {
-                auto &materials = material->second;
-                for (auto item : materials)
+                if (materialDefinitions.count(item.second) != 0)
                 {
-                    if (materialDefinitions.count(item.second) != 0)
+                    auto &defs = materialDefinitions.at(item.second);
+                    for (auto def : defs)
                     {
-                        auto &defs = materialDefinitions.at(item.second);
-                        for (auto def : defs)
-                        {
-                            styledItemColor = _geometryLoader.GetColor(def.second);
-                            if (styledItemColor)
-                                break;
-                        }
+                        auto materialColor = _geometryLoader.GetColor(def.second);
+                        if (materialColor)
+                            return materialColor;
                     }
+                }
 
-                    // if no color found, check material itself
-                    if (!styledItemColor)
-                    {
-                        styledItemColor = _geometryLoader.GetColor(item.second);
-                        if (styledItemColor)
-                            break;
-                    }
+                // if no color found, check material itself
+                auto materialColor = _geometryLoader.GetColor(item.second);
+                if (materialColor)
+                    return materialColor;
+            }
+        }
+
+        auto layerStyles = presentationLayerStyles.find(expressID);
+        if (layerStyles != presentationLayerStyles.end())
+        {
+            auto &items = layerStyles->second;
+            for (auto item : items)
+            {
+                auto layerColor = _geometryLoader.GetColor(item.second);
+                if (layerColor)
+                {
+                    return layerColor;
                 }
             }
         }
-        return styledItemColor;
+
+        return {};
     }
 
     IfcComposedMesh IfcGeometryProcessor::GetMesh(uint32_t expressID)
