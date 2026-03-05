@@ -1,6 +1,7 @@
 #include <array>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 #include <glm/glm.hpp>
 #include "geometry.h"
 #include "epsilons.h"
@@ -796,6 +797,42 @@ namespace bimGeometry
 		}
 	}
 
+	inline void ResolveSweepFrameMiddle(
+		const glm::dvec3 &prevPoint,
+		const glm::dvec3 &currPoint,
+		const glm::dvec3 &nextPoint,
+		glm::dvec3 &planeNormal,
+		glm::dvec3 &directrixSegmentNormal)
+	{
+		glm::dvec3 n1 = glm::normalize(currPoint - prevPoint);
+		glm::dvec3 n2 = glm::normalize(nextPoint - currPoint);
+
+		glm::dvec3 crossN = glm::cross(n1, n2);
+		double crossLen = glm::length(crossN);
+		if (!std::isfinite(crossLen) || crossLen <= EPS_MINISCULE)
+		{
+			planeNormal = n1;
+			directrixSegmentNormal = n1;
+			return;
+		}
+
+		glm::dvec3 p = crossN / crossLen;
+		glm::dvec3 u1 = glm::normalize(glm::cross(n1, p));
+		glm::dvec3 u2 = glm::normalize(glm::cross(n2, p));
+
+		// When neighboring segments are opposite, use a consistent side to avoid blowups.
+		if (glm::dot(n1, n2) < -0.9)
+		{
+			n2 = -n2;
+			u2 = -u2;
+		}
+
+		glm::dvec3 au = glm::normalize(u1 + u2);
+
+		planeNormal = glm::normalize(glm::cross(au, p));
+		directrixSegmentNormal = n1;
+	}
+
 	inline void AddSweepCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps);
 	inline void AddSweepCapWithHoles(Geometry &geom, const std::vector<std::vector<glm::dvec3>> &profiles, const glm::dvec3 &normalWanted, const double eps);
 
@@ -847,37 +884,7 @@ namespace bimGeometry
 			}
 			else // middle
 			{
-				// possibly the directrix is bad
-				glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
-				glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
-				glm::dvec3 p = glm::normalize(glm::cross(n1, n2));
-
-				// double prod = glm::dot(n1, n2);
-
-				if (std::isnan(p.x))
-				{
-					// TODO: sometimes outliers cause the perp to become NaN!
-					// this is bad news, as it nans the points added to the final mesh
-					// also, it's hard to bail out now :/
-					// see curve.add() for more info on how this is currently "solved"
-				}
-
-				glm::dvec3 u1 = glm::normalize(glm::cross(n1, p));
-				glm::dvec3 u2 = glm::normalize(glm::cross(n2, p));
-
-				// TODO: When n1 and n2 have similar direction but opposite side...
-				// ... projection tend to infinity. -> glm::dot(n1, n2)
-				// I implemented a bad solution to prevent projection to infinity
-				if (glm::dot(n1, n2) < -0.9)
-				{
-					n2 = -n2;
-					u2 = -u2;
-				}
-
-				glm::dvec3 au = glm::normalize(u1 + u2);
-				planeNormal = glm::normalize(glm::cross(au, p));
-				directrixSegmentNormal = n1; // n1 or n2 doesn't matter
-
+				ResolveSweepFrameMiddle(dpts[i - 1], dpts[i], dpts[i + 1], planeNormal, directrixSegmentNormal);
 				planeOrigin = dpts[i];
 			}
 
@@ -1263,37 +1270,7 @@ namespace bimGeometry
 			}
 			else // middle
 			{
-				// possibly the directrix is bad
-				glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
-				glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
-				glm::dvec3 p = glm::normalize(glm::cross(n1, n2));
-
-				// double prod = glm::dot(n1, n2);
-
-				if (std::isnan(p.x))
-				{
-					// TODO: sometimes outliers cause the perp to become NaN!
-					// this is bad news, as it nans the points added to the final mesh
-					// also, it's hard to bail out now :/
-					// see curve.add() for more info on how this is currently "solved"
-				}
-
-				glm::dvec3 u1 = glm::normalize(glm::cross(n1, p));
-				glm::dvec3 u2 = glm::normalize(glm::cross(n2, p));
-
-				// TODO: When n1 and n2 have similar direction but opposite side...
-				// ... projection tend to infinity. -> glm::dot(n1, n2)
-				// I implemented a bad solution to prevent projection to infinity
-				if (glm::dot(n1, n2) < -0.9)
-				{
-					n2 = -n2;
-					u2 = -u2;
-				}
-
-				glm::dvec3 au = glm::normalize(u1 + u2);
-				planeNormal = glm::normalize(glm::cross(au, p));
-				directrixSegmentNormal = n1; // n1 or n2 doesn't matter
-
+				ResolveSweepFrameMiddle(dpts[i - 1], dpts[i], dpts[i + 1], planeNormal, directrixSegmentNormal);
 				planeOrigin = dpts[i];
 			}
 
