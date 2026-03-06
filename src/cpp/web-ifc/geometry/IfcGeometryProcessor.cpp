@@ -41,6 +41,11 @@ namespace webifc::geometry
          return _geometryLoader;
     }
 
+    double IfcGeometryProcessor::GetLinearScalingFactor() const
+    {
+        return _cache.GetLinearScalingFactor();
+    }
+
     void IfcGeometryProcessor::SetTransformation(const std::array<double, 16> &val)
     {
         glm::dmat4 transformation;
