@@ -337,7 +337,7 @@ namespace webifc::geometry
 
                 if (op != "DIFFERENCE" && op != "UNION")
                 {
-                    spdlog::error("[GetMesh()] Unsupported boolean op {}", std::string(op), expressID);
+                    spdlog::error("[GetMesh({})] Unsupported boolean op {}", expressID, std::string(op));
                     return mesh;
                 }
 
@@ -641,7 +641,7 @@ namespace webifc::geometry
                 _loader.MoveToArgumentOffset(expressID, 3);
                 if (_loader.GetTokenType() == parsing::IfcTokenType::SET_BEGIN)
                 {
-                    spdlog::error("[GetMesh()] Unsupported IFCPOLYGONALFACESET with PnIndex {}", expressID);
+                    spdlog::error("[GetMesh({})] Unsupported IFCPOLYGONALFACESET with PnIndex", expressID);
                 }
 
                 _expressIDToGeometry[expressID] = geom;
@@ -841,7 +841,7 @@ namespace webifc::geometry
 
                 // Check for valid profile and directrix
                 if (profile.curve.points.empty() || directrix.points.empty()) {
-                    spdlog::error("[GetMesh()] Invalid profile or directrix for IFCFIXEDREFERENCESWEPTAREASOLID {}", expressID);
+                    spdlog::error("[GetMesh({})] Invalid profile or directrix for IFCFIXEDREFERENCESWEPTAREASOLID", expressID);
                     return mesh;
                 }
 
@@ -1303,7 +1303,7 @@ namespace webifc::geometry
                 return mesh;
             default:
                 std::string lineTypeString = _schemaManager.IfcTypeCodeToType(lineType);
-                spdlog::error("[GetMesh()] unexpected mesh type {}", expressID, lineTypeString);
+                spdlog::error("[GetMesh({})] unexpected mesh type {}", expressID, lineTypeString);
                 break;
             }
         }
@@ -1692,7 +1692,8 @@ namespace webifc::geometry
             break;
         }
         default:
-            spdlog::error("[GetSurface()] unexpected surface type", expressID, lineType);
+            std::string lineTypeString = _schemaManager.IfcTypeCodeToType(lineType);
+            spdlog::error("[GetSurface({})] unexpected surface type {}", expressID, lineTypeString);
             break;
         }
 
@@ -1926,7 +1927,8 @@ namespace webifc::geometry
             break;
         }
         default:
-            spdlog::error("[ReadIndexedPolygonalFace()] unexpected indexedface type {}", expressID, lineType);
+            std::string lineTypeString = _schemaManager.IfcTypeCodeToType(lineType);
+            spdlog::error("[ReadIndexedPolygonalFace({})] unexpected indexedface type {}", expressID, lineTypeString);
             break;
         }
     }
@@ -1954,7 +1956,8 @@ namespace webifc::geometry
             return geometry;
         }
         default:
-            spdlog::error("[GetBrep()] unexpected shell type {}", expressID, lineType);
+            std::string lineTypeString = _schemaManager.IfcTypeCodeToType(lineType);
+            spdlog::error("[GetBrep({})] unexpected shell type {}", expressID, lineTypeString);
             break;
         }
 
@@ -2027,7 +2030,8 @@ namespace webifc::geometry
             break;
         }
         default:
-            spdlog::error("[AddFaceToGeometry()] unexpected face type {}", expressID, lineType);
+            std::string lineTypeString = _schemaManager.IfcTypeCodeToType(lineType);
+            spdlog::error("[AddFaceToGeometry({})] unexpected face type {}", expressID, lineTypeString);
             break;
         }
     }

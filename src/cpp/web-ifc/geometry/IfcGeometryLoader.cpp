@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <iomanip>
 #include "IfcGeometryLoader.h"
+#include "../schema/IfcSchemaManager.h"
 #include "operations/curve-utils.h"
 #include "operations/geometryutils.h"
 #ifdef DEBUG_DUMP_SVG
@@ -14,6 +15,14 @@
 
 namespace webifc::geometry
 {
+  namespace
+  {
+    std::string lineTypeString(uint32_t lineType)
+    {
+      static const webifc::schema::IfcSchemaManager schemaManager;
+      return schemaManager.IfcTypeCodeToType(lineType);
+    }
+  }
 
   IfcGeometryLoader::IfcGeometryLoader(const webifc::parsing::IfcLoader &loader, webifc::cache::IfcCache &cache, uint16_t circleSegments)
       : _loader(loader), _cache(cache),  _circleSegments(circleSegments)
@@ -248,7 +257,7 @@ namespace webifc::geometry
         uint32_t linearPlacementType = _loader.GetLineType(CrossSectionPositionID);
         if (linearPlacementType != schema::IFCAXIS2PLACEMENTLINEAR)
         {
-            spdlog::error("[IFCSECTIONEDSOLIDHORIZONTAL] unexpected Location type {}", CrossSectionPositionID, linearPlacementType);
+            spdlog::error("[IFCSECTIONEDSOLIDHORIZONTAL({})] unexpected Location type {}", CrossSectionPositionID, lineTypeString(linearPlacementType));
             continue;
         }
     
@@ -285,7 +294,7 @@ namespace webifc::geometry
                 auto tokenTypeDistanceAlong = _loader.GetTokenType();
                 if (tokenTypeDistanceAlong != parsing::LABEL)
                 {
-                    spdlog::error("[IFCSECTIONEDSOLIDHORIZONTAL] unexpected argument type, expected IFCLENGTHMEASURE", expressID);
+                    spdlog::error("[IFCSECTIONEDSOLIDHORIZONTAL({})] unexpected argument type, expected IFCLENGTHMEASURE", expressID);
                     continue;
                 }
 
@@ -293,7 +302,7 @@ namespace webifc::geometry
                 std::string_view DistanceAlongLabel = _loader.GetStringArgument();
                 if (DistanceAlongLabel.compare("IFCLENGTHMEASURE") != 0)
                 {
-                    spdlog::error("[IFCSECTIONEDSOLIDHORIZONTAL] unexpected argument type, expected IFCLENGTHMEASURE", expressID);
+                    spdlog::error("[IFCSECTIONEDSOLIDHORIZONTAL({})] unexpected argument type, expected IFCLENGTHMEASURE", expressID);
                     continue;
                 }
                 _loader.GetTokenType();
@@ -1223,7 +1232,7 @@ namespace webifc::geometry
       return {};
     }
     default:
-      spdlog::error("[GetColor()] unexpected style type {}", expressID, lineType);
+      spdlog::error("[GetColor({})] unexpected style type {}", expressID, lineTypeString(lineType));
       break;
     }
 
@@ -1278,7 +1287,7 @@ namespace webifc::geometry
       return bound;
     }
     default:
-      spdlog::error("[(GetBounds)] unexpected bound type {}", expressID, lineType);
+      spdlog::error("[GetBound({})] unexpected bound type {}", expressID, lineTypeString(lineType));
       break;
     }
 
@@ -1401,7 +1410,7 @@ namespace webifc::geometry
       return curve;
     }
     default:
-      spdlog::error("[GetLoop()] unexpected loop type {}", expressID, lineType);
+      spdlog::error("[GetLoop({})] unexpected loop type {}", expressID, lineTypeString(lineType));
       break;
     }
 
@@ -1441,7 +1450,7 @@ namespace webifc::geometry
     }
     else
     {
-      spdlog::error("[GetVertexPoint()] unexpected vertxpoint type {}", pointRef, point);
+      spdlog::error("[GetVertexPoint({})] unexpected vertxpoint type {}", pointRef, lineTypeString(point));
       return {};
     }
   }
@@ -1494,7 +1503,7 @@ namespace webifc::geometry
       return curve;
     }
     default:
-      spdlog::error("[GetEdge())] unexpected edgecurve type {}", expressID, lineType);
+      spdlog::error("[GetEdge({})] unexpected edgecurve type {}", expressID, lineTypeString(lineType));
       break;
     }
     return IfcCurve();
@@ -1874,7 +1883,7 @@ namespace webifc::geometry
         }
         else
         {
-          spdlog::error("[ComputeCurve()] Unsupported trimmingselect 2D IFCLINE {}", expressID, lineType);
+          spdlog::error("[ComputeCurve({})] Unsupported trimmingselect 2D {}", expressID, lineTypeString(lineType));
         }
       }
       else if (params.dimensions == 3 && params.hasTrim)
@@ -1934,7 +1943,7 @@ namespace webifc::geometry
         }
         else
         {
-          spdlog::error("[ComputeCurve()] Unsupported trimmingselect 3D IFCLINE {}", expressID, lineType);
+          spdlog::error("[ComputeCurve({})] Unsupported trimmingselect 3D {}", expressID, lineTypeString(lineType));
         }
       }
       break;
@@ -2973,7 +2982,7 @@ namespace webifc::geometry
         double A_sq = A * A;
         double sign_A = (A >= 0) ? 1.0 : -1.0;  // negative A are allowed in IFC!
         if (A_sq < 1e-9) {
-            spdlog::error("[ComputeCurve()] IFCCLOTHOID: invalid A parameter {}", A, lineType);
+            spdlog::error("[ComputeCurve({})] IFCCLOTHOID: invalid A parameter {}", expressID, A);
             break;
         }
 
@@ -3083,8 +3092,7 @@ namespace webifc::geometry
     }
 
     default:
-
-      spdlog::error("[ComputeCurve()] Unsupported curve type {}", expressID, lineType);
+      spdlog::error("[ComputeCurve({})] Unsupported curve type {}", expressID, lineTypeString(lineType));
       break;
     }
     // DEBUG
@@ -3794,7 +3802,7 @@ namespace webifc::geometry
       return profile;
     }
     default:
-      spdlog::error("[GetProfileByLine()] unexpected profile type {}", expressID, lineType);
+      spdlog::error("[GetProfileByLine({})] unexpected profile type {}", expressID, lineTypeString(lineType));
       break;
     }
 
@@ -3819,7 +3827,7 @@ namespace webifc::geometry
       return profile;
     }
     default:
-      spdlog::error("[GetProfilebyLine()] unexpected 3D profile type {}", expressID, lineType);
+      spdlog::error("[GetProfile3D({})] unexpected 3D profile type {}", expressID, lineTypeString(lineType));
       break;
     }
 
@@ -3944,7 +3952,7 @@ namespace webifc::geometry
           glm::dvec3(pos, 1));
     }
     default:
-      spdlog::error("[GetAxis2DPlacement()] unexpected 2D placement type {}", expressID, lineType);
+      spdlog::error("[GetAxis2Placement2D({})] unexpected 2D placement type {}", expressID, lineTypeString(lineType));
       break;
     }
     return glm::dmat3();
@@ -4305,7 +4313,7 @@ namespace webifc::geometry
         return result;
       }
       default:
-        spdlog::error("[GetLocalPlacement()] unexpected placement type {}", expressID, lineType);
+        spdlog::error("[GetLocalPlacement({})] unexpected placement type {}", expressID, lineTypeString(lineType));
         break;
       }
 
