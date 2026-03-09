@@ -973,7 +973,6 @@ namespace webifc::geometry
                 return mesh;
             }
             case schema::IFCEXTRUDEDAREASOLID:
-            case schema::IFCEXTRUDEDAREASOLIDTAPERED:
             {
                 _loader.MoveToArgumentOffset(expressID, 0);
                 uint32_t profileID = _loader.GetRefArgument();
@@ -981,7 +980,6 @@ namespace webifc::geometry
                 uint32_t directionID = _loader.GetRefArgument();
                 double depth = _loader.GetDoubleArgument();
 
-                auto lineProfileType = _loader.GetLineType(profileID);
                 IfcProfile profile = _geometryLoader.GetProfile(profileID);
                 if (!profile.isComposite)
                 {
@@ -1056,6 +1054,84 @@ namespace webifc::geometry
 #ifdef CSG_DEBUG_OUTPUT
 //    io::DumpIfcGeometry(geom, "IFCEXTRUDEDAREASOLID_geom.obj");
 #endif
+
+                _expressIDToGeometry[expressID] = geom;
+                mesh.expressID = expressID;
+                mesh.hasGeometry = true;
+
+                return mesh;
+            }
+            case schema::IFCEXTRUDEDAREASOLIDTAPERED:
+            {
+                _loader.MoveToArgumentOffset(expressID, 0);
+                uint32_t startProfileID = _loader.GetRefArgument();
+                uint32_t placementID = _loader.GetOptionalRefArgument();
+                uint32_t directionID = _loader.GetRefArgument();
+                double depth = _loader.GetDoubleArgument();
+                uint32_t endProfileID = _loader.GetRefArgument();
+
+                IfcProfile startProfile = _geometryLoader.GetProfile(startProfileID);
+                IfcProfile endProfile = _geometryLoader.GetProfile(endProfileID);
+
+                if (startProfile.isComposite != endProfile.isComposite)
+                {
+                    spdlog::error("[IFCEXTRUDEDAREASOLIDTAPERED({})] start/end profile composite mismatch", expressID);
+                    return mesh;
+                }
+
+                if (!startProfile.isComposite)
+                {
+                    if (startProfile.curve.points.empty() || endProfile.curve.points.empty())
+                    {
+                        return mesh;
+                    }
+                }
+                else
+                {
+                    if (startProfile.profiles.size() != endProfile.profiles.size())
+                    {
+                        spdlog::error("[IFCEXTRUDEDAREASOLIDTAPERED({})] start/end composite profile count mismatch ({} != {})", expressID, startProfile.profiles.size(), endProfile.profiles.size());
+                        return mesh;
+                    }
+
+                    for (uint32_t i = 0; i < startProfile.profiles.size(); i++)
+                    {
+                        if (startProfile.profiles[i].curve.points.empty() || endProfile.profiles[i].curve.points.empty())
+                        {
+                            return mesh;
+                        }
+                    }
+                }
+
+                if (placementID)
+                {
+                    mesh.transformation = _geometryLoader.GetLocalPlacement(placementID);
+                }
+
+                glm::dvec3 dir = _geometryLoader.GetDirection(directionID);
+
+                IfcGeometry geom;
+                if (!startProfile.isComposite)
+                {
+                    geom = ExtrudeTapered(startProfile, endProfile, dir, depth);
+                    if (geom.numFaces == 0)
+                    {
+                        return mesh;
+                    }
+                }
+                else
+                {
+                    for (uint32_t i = 0; i < startProfile.profiles.size(); i++)
+                    {
+                        IfcGeometry geom_t = ExtrudeTapered(startProfile.profiles[i], endProfile.profiles[i], dir, depth);
+                        if (geom_t.numFaces == 0)
+                        {
+                            return mesh;
+                        }
+                        geom.AddPart(geom_t);
+                        geom.AddGeometry(geom_t);
+                    }
+                }
 
                 _expressIDToGeometry[expressID] = geom;
                 mesh.expressID = expressID;
