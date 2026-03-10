@@ -831,6 +831,20 @@ namespace webifc::geometry
                 uint32_t profileID = _loader.GetRefArgument();
                 uint32_t placementID = _loader.GetOptionalRefArgument();
                 uint32_t directrixRef = _loader.GetRefArgument();
+                parsing::IfcTokenType startParamToken = _loader.GetTokenType();
+                if (startParamToken != parsing::IfcTokenType::EMPTY)
+                {
+                    _loader.StepBack();
+                    _loader.GetStringArgument();
+                    spdlog::warn("[GetMesh({})] IFCFIXEDREFERENCESWEPTAREASOLID StartParam is currently ignored", expressID);
+                }
+                parsing::IfcTokenType endParamToken = _loader.GetTokenType();
+                if (endParamToken != parsing::IfcTokenType::EMPTY)
+                {
+                    _loader.StepBack();
+                    _loader.GetStringArgument();
+                    spdlog::warn("[GetMesh({})] IFCFIXEDREFERENCESWEPTAREASOLID EndParam is currently ignored", expressID);
+                }
                 uint32_t fixedReferenceID = _loader.GetRefArgument();
 
                 // Retrieve profile, placement, directrix, and fixed reference direction
@@ -840,7 +854,8 @@ namespace webifc::geometry
                 glm::dvec3 fixedReference = _geometryLoader.GetDirection(fixedReferenceID);
 
                 // Check for valid profile and directrix
-                if (profile.curve.points.empty() || directrix.points.empty()) {
+                if (profile.curve.points.empty() || directrix.points.empty())
+                {
                     spdlog::error("[GetMesh({})] Invalid profile or directrix for IFCFIXEDREFERENCESWEPTAREASOLID", expressID);
                     return mesh;
                 }
