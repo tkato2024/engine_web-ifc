@@ -761,98 +761,177 @@ namespace webifc::geometry
 		return ToIfcGeometry(geom);
 	}
 
+	inline glm::dvec3 GetFallbackSweepXAxis(const glm::dvec3 &zAxis)
+	{
+		// Pick any stable axis orthogonal to zAxis when FixedReference degenerates.
+		glm::dvec3 axis = glm::cross(glm::dvec3(0, 0, 1), zAxis);
+		if (glm::length(axis) <= EPS_SMALL)
+		{
+			axis = glm::cross(glm::dvec3(0, 1, 0), zAxis);
+		}
+		if (glm::length(axis) <= EPS_SMALL)
+		{
+			axis = glm::cross(glm::dvec3(1, 0, 0), zAxis);
+		}
+		return glm::normalize(axis);
+	}
+
 	inline IfcGeometry SweepFixedReference(double linearScalingFactor, bool closed, const IfcProfile& profile, const IfcCurve& directrix, const glm::dvec3& fixedReference)
 	{
-		IfcGeometry geom;
-
-		// Normalize the fixed reference direction
-		glm::dvec3 refDir = glm::normalize(fixedReference);
-
-		// Create a transformation matrix to align the profile with the fixed reference
-		glm::dvec3 zAxis(0, 0, 1); // Default profile z-axis
-		glm::dvec3 rotationAxis = glm::cross(zAxis, refDir);
-		double angle = glm::acos(glm::dot(zAxis, refDir));
-		glm::dmat4 orientation = (glm::length(rotationAxis) > EPS_SMALL) ?
-			glm::rotate(glm::dmat4(1.0), angle, rotationAxis) : glm::dmat4(1.0);
-
-		// Sweep the profile along the directrix
-		std::vector<glm::dvec3> profilePoints = profile.curve.points;
-		std::vector<glm::dvec3> pathPoints = directrix.points;
-		uint32_t segments = closed ? pathPoints.size() : pathPoints.size() - 1;
-
-		// Store profiles for start and end caps
-		std::vector<glm::dvec3> startProfile;
-		std::vector<glm::dvec3> endProfile;
-
-		// Compute start profile (at first directrix point)
-		glm::dvec3 startPos = pathPoints[0];
-		for (const auto& pt : profilePoints) {
-			glm::dvec4 transformedPt = orientation * glm::dvec4(pt, 1.0);
-			startProfile.push_back(startPos + glm::dvec3(transformedPt));
+		bimGeometry::Geometry geom;
+		if (profile.curve.points.empty())
+		{
+			return ToIfcGeometry(geom);
 		}
 
-		for (uint32_t i = 0; i < segments; i++) {
-			glm::dvec3 pos = pathPoints[i];
-			glm::dvec3 nextPos = pathPoints[(i + 1) % pathPoints.size()];
+		std::vector<std::vector<glm::dvec3>> referenceProfilePoints;
+		referenceProfilePoints.push_back(profile.curve.points);
+		for (const auto &hole : profile.holes)
+		{
+			referenceProfilePoints.push_back(hole.points);
+		}
 
-			// Transform profile points at the current position
-			std::vector<glm::dvec3> currentProfile;
-			for (const auto& pt : profilePoints) {
-				glm::dvec4 transformedPt = orientation * glm::dvec4(pt, 1.0);
-				currentProfile.push_back(pos + glm::dvec3(transformedPt));
+		std::vector<glm::vec<3, glm::f64>> dpts = bimGeometry::BuildSweepDirectrixPoints(directrix.points, linearScalingFactor, true);
+		std::vector<glm::vec<3, glm::f64>> dptsForCurves = dpts;
+
+		if (dpts.size() <= 1)
+		{
+			return ToIfcGeometry(geom);
+		}
+
+		if (closed)
+		{
+			// Add virtual neighbors so closed sweeps can resolve start/end frames like interior points.
+			std::vector<glm::vec<3, glm::f64>> newDpts;
+			newDpts.reserve(dptsForCurves.size() + 2);
+			glm::vec<3, glm::f64> dirStart = dptsForCurves[dptsForCurves.size() - 2] - dptsForCurves[dptsForCurves.size() - 1];
+			glm::vec<3, glm::f64> dirEnd = dptsForCurves[1] - dptsForCurves[0];
+			newDpts.push_back(dptsForCurves[0] + dirStart);
+			for (size_t i = 0; i < dptsForCurves.size(); i++)
+			{
+				newDpts.push_back(dptsForCurves[i]);
 			}
+			newDpts.push_back(dptsForCurves[dptsForCurves.size() - 1] + dirEnd);
+			dptsForCurves = newDpts;
+		}
 
-			// Transform profile points at the next position
-			std::vector<glm::dvec3> nextProfile;
-			if (!closed || i < segments - 1) {
-				for (const auto& pt : profilePoints) {
-					glm::dvec4 transformedPt = orientation * glm::dvec4(pt, 1.0);
-					nextProfile.push_back(nextPos + glm::dvec3(transformedPt));
+		std::vector<std::vector<bimGeometry::Curve>> profileCurves;
+		profileCurves.reserve(referenceProfilePoints.size());
+
+		for (const auto &loopPoints : referenceProfilePoints)
+		{
+			// Build one swept curve per profile loop: outer boundary first, then holes.
+			std::vector<bimGeometry::Curve> curves;
+			for (size_t i = 0; i < dptsForCurves.size(); i++)
+			{
+				bimGeometry::Curve curve;
+
+				glm::dvec3 planeNormal;
+				glm::dvec3 directrixSegmentNormal;
+				glm::dvec3 planeOrigin;
+
+				if (i == 0)
+				{
+					planeNormal = glm::normalize(dptsForCurves[1] - dptsForCurves[0]);
+					directrixSegmentNormal = planeNormal;
+					planeOrigin = dptsForCurves[0];
+				}
+				else if (i == dptsForCurves.size() - 1)
+				{
+					planeNormal = glm::normalize(dptsForCurves[i] - dptsForCurves[i - 1]);
+					directrixSegmentNormal = planeNormal;
+					planeOrigin = dptsForCurves[i];
+				}
+				else
+				{
+					bimGeometry::ResolveSweepFrameMiddle(dptsForCurves[i - 1], dptsForCurves[i], dptsForCurves[i + 1], planeNormal, directrixSegmentNormal);
+					planeOrigin = dptsForCurves[i];
+				}
+
+				// IFC semantics: Z follows the directrix tangent, X is the projected FixedReference.
+				glm::dvec3 zAxis = glm::normalize(directrixSegmentNormal);
+				glm::dvec3 xAxis = fixedReference - glm::dot(fixedReference, zAxis) * zAxis;
+				if (glm::length(xAxis) <= EPS_SMALL)
+				{
+					xAxis = GetFallbackSweepXAxis(zAxis);
+				}
+				else
+				{
+					xAxis = glm::normalize(xAxis);
+				}
+
+				glm::dvec3 yAxis = glm::cross(zAxis, xAxis);
+				if (glm::length(yAxis) <= EPS_SMALL)
+				{
+					xAxis = GetFallbackSweepXAxis(zAxis);
+					yAxis = glm::cross(zAxis, xAxis);
+				}
+
+				yAxis = glm::normalize(yAxis);
+				xAxis = glm::normalize(glm::cross(yAxis, zAxis));
+
+				for (const auto &pt2D : loopPoints)
+				{
+					// Reproject onto the resolved sweep plane to keep adjacent sections continuous at corners.
+					glm::dvec3 point = planeOrigin + pt2D.x * xAxis + pt2D.y * yAxis;
+					glm::dvec3 projectedPoint = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, point, directrixSegmentNormal);
+					curve.Add(projectedPoint);
+				}
+
+				if (!closed || (i != 0 && i != dptsForCurves.size() - 1))
+				{
+					curves.push_back(curve);
 				}
 			}
-			else {
-				nextProfile = startProfile; // For closed curves, connect to the start
-			}
+			profileCurves.push_back(curves);
+		}
 
-			// Store end profile (at last directrix point)
-			if (i == segments - 1) {
-				endProfile = nextProfile;
-			}
+		// Stitch adjacent sections into the side faces of the swept solid.
+		for (size_t i = 1; i < dpts.size(); i++)
+		{
+			for (size_t profileIndex = 0; profileIndex < profileCurves.size(); profileIndex++)
+			{
+				const auto &curves = profileCurves[profileIndex];
+				if (curves.size() <= i)
+				{
+					continue;
+				}
 
-			// Add two triangles for each segment of the profile
-			for (size_t j = 0; j < profilePoints.size(); j++) {
-				size_t jNext = (j + 1) % profilePoints.size();
-
-				// First triangle: (current[j], next[j], next[jNext])
-				geom.AddFace(
-					currentProfile[j],
-					nextProfile[j],
-					nextProfile[jNext]
-				);
-
-				// Second triangle: (current[j], next[jNext], current[jNext])
-				geom.AddFace(
-					currentProfile[j],
-					nextProfile[jNext],
-					currentProfile[jNext]
-				);
+				const auto &c1 = curves[i - 1].points;
+				const auto &c2 = curves[i].points;
+				ConnectSweepCurves(geom, c1, c2, profileIndex > 0);
 			}
 		}
 
-		// Handle caps for non-closed sweeps
-		if (!closed) {
-			// Add start cap
-			IfcProfile startCap = profile;
-			startCap.curve.points = startProfile;
-			geom.AddGeometry(Extrude(startCap, glm::dvec3(0, 0, -1), 0)); // Zero-depth extrusion for cap
+		if (!closed && dpts.size() >= 2)
+		{
+			// Open sweeps need end caps, including holes.
+			glm::dvec3 startDir = glm::normalize(dpts[1] - dpts[0]);
+			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
+			double capEps = EPS_SMALL * linearScalingFactor;
 
-			// Add end cap
-			IfcProfile endCap = profile;
-			endCap.curve.points = endProfile;
-			geom.AddGeometry(Extrude(endCap, glm::dvec3(0, 0, 1), 0));
+			std::vector<std::vector<glm::dvec3>> startProfiles;
+			std::vector<std::vector<glm::dvec3>> endProfiles;
+			startProfiles.reserve(profileCurves.size());
+			endProfiles.reserve(profileCurves.size());
+			for (const auto &curves : profileCurves)
+			{
+				if (curves.empty())
+				{
+					startProfiles.emplace_back();
+					endProfiles.emplace_back();
+					continue;
+				}
+
+				startProfiles.push_back(curves.front().points);
+				endProfiles.push_back(curves.back().points);
+			}
+
+			AddSweepCapWithHoles(geom, startProfiles, -startDir, capEps);
+			AddSweepCapWithHoles(geom, endProfiles, endDir, capEps);
 		}
 
-		return geom;
+		return ToIfcGeometry(geom);
 	}
 
 	// TODO: Send to bimGeometry
