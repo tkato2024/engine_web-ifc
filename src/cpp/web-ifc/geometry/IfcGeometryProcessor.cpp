@@ -1357,6 +1357,7 @@ namespace webifc::geometry
             }
             case schema::IFCCIRCLE:
             case schema::IFCCOMPOSITECURVE:
+            case schema::IFCCURVESEGMENT:            
             case schema::IFCPOLYLINE:
             case schema::IFCINDEXEDPOLYCURVE:
             case schema::IFCTRIMMEDCURVE:
