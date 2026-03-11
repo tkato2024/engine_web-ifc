@@ -1809,52 +1809,16 @@ namespace webifc::geometry
       return trim;
     }
 
-    if (tokenType == parsing::IfcTokenType::LABEL)
+    _loader.StepBack();
+    ReadCurveMeasureSelect(trim);
+    _loader.GetTokenType();
+
+    if (trim.trimType == TRIM_NONE)
     {
-      _loader.StepBack();
-      std::string_view curveMeasureLabel = _loader.GetStringArgument();
-      if (_loader.GetTokenType() != parsing::IfcTokenType::SET_BEGIN)
-      {
-        spdlog::warn("[ReadOptionalCurveMeasureSelect()] Malformed curve measure token");
-        return std::nullopt;
-      }
-
-      parsing::IfcTokenType valueToken = _loader.GetTokenType();
-      if (valueToken != parsing::IfcTokenType::REAL && valueToken != parsing::IfcTokenType::INTEGER)
-      {
-        spdlog::warn("[ReadOptionalCurveMeasureSelect()] Malformed curve measure value");
-        return std::nullopt;
-      }
-
-      _loader.StepBack();
-      trim.value = valueToken == parsing::IfcTokenType::REAL ? _loader.GetDoubleArgument() : static_cast<double>(_loader.GetIntArgument());
-
-      if (_loader.GetTokenType() != parsing::IfcTokenType::SET_END)
-      {
-        spdlog::warn("[ReadOptionalCurveMeasureSelect()] Unterminated curve measure token");
-        return std::nullopt;
-      }
-
-      if (curveMeasureLabel == "IFCPARAMETERVALUE")
-      {
-        trim.trimType = TRIM_BY_PARAMETER;
-        return trim;
-      }
-
-      if (curveMeasureLabel == "IFCLENGTHMEASURE")
-      {
-        trim.trimType = TRIM_BY_LENGTH;
-        return trim;
-      }
-
-      spdlog::warn("[ReadOptionalCurveMeasureSelect()] Unsupported curve measure token");
       return std::nullopt;
     }
 
-    _loader.StepBack();
-    _loader.GetStringArgument();
-    spdlog::warn("[ReadOptionalCurveMeasureSelect()] Unsupported curve measure token");
-    return std::nullopt;
+    return trim;
   }
 
   bool IfcGeometryLoader::TrimCurveByLength(const IfcCurve& curve, const std::optional<IfcTrimmingSelect>& startTrim, const std::optional<IfcTrimmingSelect>& endTrim, IfcCurve& trimmedCurve) const
