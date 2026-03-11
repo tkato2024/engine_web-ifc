@@ -2683,33 +2683,18 @@ namespace webifc::geometry
       if (applyOwnPlacement)
       {
           // apply placementID
-          glm::dmat3 placement = GetAxis2Placement2D(placementID);
+          glm::dmat4 placement = GetLocalPlacement(placementID);
           for (size_t i = 0; i < currentSegmentPoints.size(); ++i)
           {
               glm::dvec3& point = currentSegmentPoints[i];
-              double zCoord = point.z;
-              // ensure homogeneous coordinate
-              glm::dvec3 pointHomogenious(point.x, point.y, 1.0);
+              glm::dvec4 pointHomogenious(point, 1.0);
               pointHomogenious = placement * pointHomogenious;
-              point.x = pointHomogenious.x;
-              point.y = pointHomogenious.y;
-              point.z = zCoord;  // restore z coordinate, in case it is a 3D curve
+              point = glm::dvec3(pointHomogenious);
           }
 
           // Update the end tangent of the composite curve
           glm::dvec3& tangent = curve.endTangent;
-          glm::dvec2 tangent2D(tangent.x, tangent.y);
-
-          // extract 2x2 rotation part of placement
-          glm::dmat2 rotation(
-              placement[0][0], placement[0][1],
-              placement[1][0], placement[1][1]);
-
-          // apply only rotation
-          tangent2D = rotation * tangent2D;
-
-          // assign back, dropping translation
-          tangent = glm::dvec3(tangent2D, 0);
+          tangent = glm::dmat3(placement) * tangent;
 
       }
       
