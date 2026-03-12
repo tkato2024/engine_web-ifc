@@ -4060,18 +4060,40 @@ namespace webifc::geometry
 
       glm::dvec2 Axis1(1, 0);
       glm::dvec2 Axis2(0, 1);
+      bool hasAxis1 = false;
+      bool hasAxis2 = false;
 
       _loader.MoveToArgumentOffset(expressID, 0);
       if (_loader.GetTokenType() == parsing::IfcTokenType::REF)
       {
         _loader.StepBack();
-        Axis1 = glm::normalize(GetCartesianPoint3D(_loader.GetRefArgument()));
+        glm::dvec3 dir = GetDirection(_loader.GetRefArgument());
+        Axis1 = glm::dvec2(dir.x, dir.y);
+        hasAxis1 = true;
       }
       _loader.MoveToArgumentOffset(expressID, 1);
       if (_loader.GetTokenType() == parsing::IfcTokenType::REF)
       {
         _loader.StepBack();
-        Axis2 = glm::normalize(GetCartesianPoint3D(_loader.GetRefArgument()));
+        glm::dvec3 dir = GetDirection(_loader.GetRefArgument());
+        Axis2 = glm::dvec2(dir.x, dir.y);
+        hasAxis2 = true;
+      }
+
+      if (hasAxis1)
+      {
+        Axis1 = glm::normalize(Axis1);
+        glm::dvec2 derivedAxis2(-Axis1.y, Axis1.x);
+        if (hasAxis2 && glm::dot(Axis2, derivedAxis2) < 0)
+        {
+          derivedAxis2 = -derivedAxis2;
+        }
+        Axis2 = derivedAxis2;
+      }
+      else if (hasAxis2)
+      {
+        Axis2 = glm::normalize(Axis2);
+        Axis1 = glm::dvec2(Axis2.y, -Axis2.x);
       }
 
       _loader.MoveToArgumentOffset(expressID, 2);
