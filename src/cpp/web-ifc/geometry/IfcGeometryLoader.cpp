@@ -2851,19 +2851,52 @@ namespace webifc::geometry
 
       if (applyOwnPlacement)
       {
-          // apply placementID
+          // Align the trimmed segment start with Placement.Location and Placement.RefDirection.
           glm::dmat4 placement = GetLocalPlacement(placementID);
+          glm::dvec3 targetOrigin = glm::dvec3(placement[3]);
+          glm::dvec3 targetTangent = glm::normalize(glm::dvec3(placement[0]));
+          glm::dvec3 currentSegmentStart = currentSegmentPoints[0];
+          glm::dvec3 currentStartTangent = glm::dvec3(1.0, 0.0, 0.0);
+          if (currentSegmentPoints.size() > 1)
+          {
+              glm::dvec3 chord = currentSegmentPoints[1] - currentSegmentPoints[0];
+              if (glm::length(chord) > EPS_SMALL)
+              {
+                  currentStartTangent = glm::normalize(chord);
+              }
+          }
+
+          glm::dmat3 rotation(1.0);
+          double tangentDot = glm::clamp(glm::dot(currentStartTangent, targetTangent), -1.0, 1.0);
+          glm::dvec3 rotationAxis = glm::cross(currentStartTangent, targetTangent);
+          if (glm::length(rotationAxis) <= EPS_SMALL && tangentDot < 0.0)
+          {
+              rotationAxis = glm::cross(currentStartTangent, glm::dvec3(0.0, 0.0, 1.0));
+              if (glm::length(rotationAxis) <= EPS_SMALL)
+              {
+                  rotationAxis = glm::cross(currentStartTangent, glm::dvec3(0.0, 1.0, 0.0));
+              }
+          }
+          if (glm::length(rotationAxis) > EPS_SMALL)
+          {
+              double angle = std::acos(tangentDot);
+              rotation = glm::dmat3(glm::rotate(glm::dmat4(1.0), angle, glm::normalize(rotationAxis)));
+          }
+
           for (size_t i = 0; i < currentSegmentPoints.size(); ++i)
           {
               glm::dvec3& point = currentSegmentPoints[i];
-              glm::dvec4 pointHomogenious(point, 1.0);
-              pointHomogenious = placement * pointHomogenious;
-              point = glm::dvec3(pointHomogenious);
+              glm::dvec3 relativePoint = point - currentSegmentStart;
+              point = rotation * relativePoint + targetOrigin;
           }
 
-          // Update the end tangent of the composite curve
+          // Update tangents to the aligned segment frame.
           glm::dvec3& tangent = curve.endTangent;
-          tangent = glm::dmat3(placement) * tangent;
+          tangent = rotation * tangent;
+          if (!curve.segmentStartTangents.empty())
+          {
+              curve.segmentStartTangents.back() = rotation * curve.segmentStartTangents.back();
+          }
 
       }
       
