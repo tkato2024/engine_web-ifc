@@ -22,6 +22,43 @@ namespace webifc::geometry
       static const webifc::schema::IfcSchemaManager schemaManager;
       return schemaManager.IfcTypeCodeToType(lineType);
     }
+
+    glm::dvec3 InterpolateCurvePoint(const IfcCurve& curve, double distanceAlong)
+    {
+      if (curve.points.empty())
+      {
+        return glm::dvec3(0.0);
+      }
+
+      if (curve.points.size() == 1)
+      {
+        return curve.points.front();
+      }
+
+      double traversed = 0.0;
+      for (size_t i = 1; i < curve.points.size(); ++i)
+      {
+        const glm::dvec3& p1 = curve.points[i - 1];
+        const glm::dvec3& p2 = curve.points[i];
+        double segmentLength = glm::distance(p1, p2);
+
+        if (segmentLength <= EPS_SMALL)
+        {
+          continue;
+        }
+
+        if (distanceAlong <= traversed + segmentLength)
+        {
+          double factor = (distanceAlong - traversed) / segmentLength;
+          factor = glm::clamp(factor, 0.0, 1.0);
+          return p1 + (p2 - p1) * factor;
+        }
+
+        traversed += segmentLength;
+      }
+
+      return curve.points.back();
+    }
   }
 
   IfcGeometryLoader::IfcGeometryLoader(const webifc::parsing::IfcLoader &loader, webifc::cache::IfcCache &cache, uint16_t circleSegments)
@@ -1753,6 +1790,138 @@ namespace webifc::geometry
     params.edge = edge;
     ComputeCurve(expressID, curve, params);
     return curve;
+  }
+
+  std::optional<IfcTrimmingSelect> IfcGeometryLoader::ReadOptionalCurveMeasureSelect() const
+  {
+    parsing::IfcTokenType tokenType = _loader.GetTokenType();
+    if (tokenType == parsing::IfcTokenType::EMPTY)
+    {
+      return std::nullopt;
+    }
+
+    IfcTrimmingSelect trim;
+    if (tokenType == parsing::IfcTokenType::REAL)
+    {
+      _loader.StepBack();
+      trim.trimType = TRIM_BY_PARAMETER;
+      trim.value = _loader.GetDoubleArgument();
+      return trim;
+    }
+
+    _loader.StepBack();
+    ReadCurveMeasureSelect(trim);
+    _loader.GetTokenType();
+
+    if (trim.trimType == TRIM_NONE)
+    {
+      return std::nullopt;
+    }
+
+    return trim;
+  }
+
+  bool IfcGeometryLoader::TrimCurveByLength(const IfcCurve& curve, const std::optional<IfcTrimmingSelect>& startTrim, const std::optional<IfcTrimmingSelect>& endTrim, IfcCurve& trimmedCurve) const
+  {
+    trimmedCurve = IfcCurve();
+
+    if (curve.points.size() < 2)
+    {
+      return false;
+    }
+
+    double totalLength = ComputeCurveLength(curve);
+    if (totalLength <= EPS_SMALL)
+    {
+      return false;
+    }
+
+    double startLength = 0.0;
+    double endLength = totalLength;
+
+    if (startTrim)
+    {
+      if (startTrim->trimType != TRIM_BY_LENGTH)
+      {
+        return false;
+      }
+      startLength = startTrim->value;
+    }
+
+    if (endTrim)
+    {
+      if (endTrim->trimType != TRIM_BY_LENGTH)
+      {
+        return false;
+      }
+      endLength = endTrim->value;
+    }
+
+    startLength = glm::clamp(startLength, 0.0, totalLength);
+    endLength = glm::clamp(endLength, 0.0, totalLength);
+
+    double forwardStart = startLength;
+    double forwardEnd = endLength;
+    bool reverseResult = false;
+
+    if (startLength >= endLength)
+    {
+      forwardStart = endLength;
+      forwardEnd = startLength;
+      reverseResult = true;
+    }
+
+    std::vector<glm::dvec3> points;
+    points.reserve(curve.points.size() + 2);
+    points.push_back(InterpolateCurvePoint(curve, forwardStart));
+
+    double traversed = 0.0;
+    for (size_t i = 1; i < curve.points.size(); ++i)
+    {
+      const glm::dvec3& p1 = curve.points[i - 1];
+      const glm::dvec3& p2 = curve.points[i];
+      double segmentLength = glm::distance(p1, p2);
+
+      if (segmentLength <= EPS_SMALL)
+      {
+        continue;
+      }
+
+      traversed += segmentLength;
+      if (traversed > forwardStart + EPS_SMALL && traversed < forwardEnd - EPS_SMALL)
+      {
+        points.push_back(p2);
+      }
+    }
+
+    glm::dvec3 endPoint = InterpolateCurvePoint(curve, forwardEnd);
+    if (points.empty() || glm::distance(points.back(), endPoint) > EPS_SMALL)
+    {
+      points.push_back(endPoint);
+    }
+
+    std::vector<glm::dvec3> deduped;
+    deduped.reserve(points.size());
+    for (const glm::dvec3& point : points)
+    {
+      if (deduped.empty() || glm::distance(deduped.back(), point) > EPS_SMALL)
+      {
+        deduped.push_back(point);
+      }
+    }
+
+    if (deduped.size() < 2)
+    {
+      return false;
+    }
+
+    if (reverseResult)
+    {
+      std::reverse(deduped.begin(), deduped.end());
+    }
+
+    trimmedCurve.points = std::move(deduped);
+    return true;
   }
 
   void IfcGeometryLoader::ComputeCurve(uint32_t expressID, IfcCurve &curve, const ComputeCurveParams& params) const

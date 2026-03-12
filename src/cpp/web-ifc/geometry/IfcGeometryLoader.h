@@ -38,6 +38,8 @@ namespace webifc::geometry
     IfcProfile GetProfile3D(uint32_t expressID) const;
     IfcCurve GetLocalCurve(uint32_t expressID) const;
     IfcCurve GetCurve(uint32_t expressID, uint8_t dimensions, bool edge = false) const;
+    std::optional<IfcTrimmingSelect> ReadOptionalCurveMeasureSelect() const;
+    bool TrimCurveByLength(const IfcCurve& curve, const std::optional<IfcTrimmingSelect>& startTrim, const std::optional<IfcTrimmingSelect>& endTrim, IfcCurve& trimmedCurve) const;
 
     // Helper function to compute the total length of the curve
     double ComputeCurveLength(const IfcCurve& curve) const;

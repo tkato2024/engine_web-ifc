@@ -825,26 +825,15 @@ namespace webifc::geometry
 
                 return mesh;
             }
+            case schema::IFCDIRECTRIXDERIVEDREFERENCESWEPTAREASOLID:
             case schema::IFCFIXEDREFERENCESWEPTAREASOLID:
             {
                 _loader.MoveToArgumentOffset(expressID, 0);
                 uint32_t profileID = _loader.GetRefArgument();
                 uint32_t placementID = _loader.GetOptionalRefArgument();
                 uint32_t directrixRef = _loader.GetRefArgument();
-                parsing::IfcTokenType startParamToken = _loader.GetTokenType();
-                if (startParamToken != parsing::IfcTokenType::EMPTY)
-                {
-                    _loader.StepBack();
-                    _loader.GetStringArgument();
-                    spdlog::warn("[GetMesh({})] IFCFIXEDREFERENCESWEPTAREASOLID StartParam is currently ignored", expressID);
-                }
-                parsing::IfcTokenType endParamToken = _loader.GetTokenType();
-                if (endParamToken != parsing::IfcTokenType::EMPTY)
-                {
-                    _loader.StepBack();
-                    _loader.GetStringArgument();
-                    spdlog::warn("[GetMesh({})] IFCFIXEDREFERENCESWEPTAREASOLID EndParam is currently ignored", expressID);
-                }
+                std::optional<IfcTrimmingSelect> startParam = _geometryLoader.ReadOptionalCurveMeasureSelect();
+                std::optional<IfcTrimmingSelect> endParam = _geometryLoader.ReadOptionalCurveMeasureSelect();
                 uint32_t fixedReferenceID = _loader.GetRefArgument();
 
                 // Retrieve profile, placement, directrix, and fixed reference direction
@@ -860,8 +849,29 @@ namespace webifc::geometry
                     return mesh;
                 }
 
+                bool hasLengthTrim = (!startParam || startParam->trimType == TRIM_BY_LENGTH) && (!endParam || endParam->trimType == TRIM_BY_LENGTH);
+                bool hasParameterTrim = (startParam && startParam->trimType == TRIM_BY_PARAMETER) || (endParam && endParam->trimType == TRIM_BY_PARAMETER);
+                bool trimApplied = false;
+                if (hasParameterTrim)
+                {
+                    spdlog::warn("[GetMesh({})] IFCFIXEDREFERENCESWEPTAREASOLID IFCPARAMETERVALUE StartParam/EndParam are not supported yet", expressID);
+                }
+                else if ((startParam || endParam) && hasLengthTrim)
+                {
+                    IfcCurve trimmedDirectrix;
+                    if (_geometryLoader.TrimCurveByLength(directrix, startParam, endParam, trimmedDirectrix))
+                    {
+                        directrix = trimmedDirectrix;
+                        trimApplied = true;
+                    }
+                    else
+                    {
+                        spdlog::warn("[GetMesh({})] IFCFIXEDREFERENCESWEPTAREASOLID failed to trim directrix by StartParam/EndParam, using full directrix", expressID);
+                    }
+                }
+
                 // Determine if the sweep is closed
-                bool closed = glm::distance(directrix.points[0], directrix.points[directrix.points.size() - 1]) < EPS_SMALL;
+                bool closed = !trimApplied && glm::distance(directrix.points[0], directrix.points[directrix.points.size() - 1]) < EPS_SMALL;
 
                 // Generate geometry by sweeping the profile with fixed orientation
                 IfcGeometry geom = SweepFixedReference(
