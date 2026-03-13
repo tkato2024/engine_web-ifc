@@ -3150,6 +3150,228 @@ namespace webifc::geometry
 
       break;
     }
+    case schema::IFCPOLYNOMIALCURVE:
+    {
+      _loader.MoveToArgumentOffset(expressID, 0);
+      uint32_t positionID = _loader.GetRefArgument();
+
+      auto readOptionalCoefficients = [&](uint32_t argumentIndex)
+      {
+        std::vector<double> coefficients;
+        _loader.MoveToArgumentOffset(expressID, argumentIndex);
+        if (_loader.GetTokenType() == parsing::IfcTokenType::EMPTY)
+        {
+          return coefficients;
+        }
+
+        _loader.StepBack();
+        auto coefficientSet = _loader.GetSetArgument();
+        coefficients.reserve(coefficientSet.size());
+        for (auto &token : coefficientSet)
+        {
+          coefficients.push_back(_loader.GetDoubleArgument(token));
+        }
+
+        return coefficients;
+      };
+
+      auto evaluatePolynomial = [](const std::vector<double> &coefficients, double parameter)
+      {
+        double value = 0.0;
+        for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it)
+        {
+          value = value * parameter + *it;
+        }
+        return value;
+      };
+
+      auto evaluatePolynomialDerivative = [](const std::vector<double> &coefficients, double parameter)
+      {
+        double value = 0.0;
+        for (size_t i = coefficients.size(); i > 1; --i)
+        {
+          value = value * parameter + coefficients[i - 1] * static_cast<double>(i - 1);
+        }
+        return value;
+      };
+
+      std::vector<double> coefficientsX = readOptionalCoefficients(1);
+      std::vector<double> coefficientsY = readOptionalCoefficients(2);
+      std::vector<double> coefficientsZ = readOptionalCoefficients(3);
+
+      if (!params.hasTrim)
+      {
+        spdlog::error("[ComputeCurve({})] IfcPolynomialCurve requires trim range", expressID);
+        break;
+      }
+
+      bool trimTypesSupported =
+          (params.trimStart.trimType == TRIM_BY_PARAMETER || params.trimStart.trimType == TRIM_BY_LENGTH) &&
+          (params.trimEnd.trimType == TRIM_BY_PARAMETER || params.trimEnd.trimType == TRIM_BY_LENGTH);
+      if (!trimTypesSupported)
+      {
+        spdlog::error("[ComputeCurve({})] Unsupported trimmingselect {}", expressID, lineTypeString(lineType));
+        break;
+      }
+
+      if (coefficientsX.empty() && coefficientsY.empty() && coefficientsZ.empty())
+      {
+        spdlog::error("[ComputeCurve({})] IfcPolynomialCurve has no coefficients", expressID);
+        break;
+      }
+
+      bool is2D = params.dimensions == 2;
+      bool is3D = params.dimensions == 3;
+
+      glm::dmat3 position2D(1.0);
+      glm::dmat4 position3D(1.0);
+      if (!params.ignorePlacement)
+      {
+        if (is2D)
+        {
+          position2D = GetAxis2Placement2D(positionID);
+        }
+        else
+        {
+          position3D = GetLocalPlacement(positionID);
+        }
+      }
+
+      auto transformPoint = [&](const glm::dvec3 &localPoint)
+      {
+        if (params.ignorePlacement)
+        {
+          return localPoint;
+        }
+
+        if (is2D)
+        {
+          glm::dvec3 transformed = position2D * glm::dvec3(localPoint.x, localPoint.y, 1.0);
+          return glm::dvec3(transformed.x, transformed.y, 0.0);
+        }
+
+        return glm::dvec3(position3D * glm::dvec4(localPoint, 1.0));
+      };
+
+      auto transformTangent = [&](const glm::dvec3 &localTangent)
+      {
+        if (params.ignorePlacement)
+        {
+          return localTangent;
+        }
+
+        if (is2D)
+        {
+          return position2D * glm::dvec3(localTangent.x, localTangent.y, 0.0);
+        }
+
+        return glm::dmat3(position3D) * localTangent;
+      };
+
+      double startParameter = params.trimStart.value;
+      double endParameter = params.trimEnd.value;
+      if (params.trimSense == TRIM_SENSE_REVERSE)
+      {
+        std::swap(startParameter, endParameter);
+      }
+
+      bool reverseCurve = false;
+      if (startParameter > endParameter)
+      {
+        std::swap(startParameter, endParameter);
+        reverseCurve = true;
+      }
+
+      int numPoints = std::max<int>(_circleSegments, 4);
+
+      auto evaluatePoint = [&](double parameter)
+      {
+        glm::dvec3 localPoint(0.0);
+        localPoint.x = evaluatePolynomial(coefficientsX, parameter);
+        localPoint.y = evaluatePolynomial(coefficientsY, parameter);
+        if (is3D)
+        {
+          localPoint.z = evaluatePolynomial(coefficientsZ, parameter);
+        }
+        return transformPoint(localPoint);
+      };
+
+      auto evaluateTangent = [&](double parameter)
+      {
+        glm::dvec3 localTangent(0.0);
+        localTangent.x = evaluatePolynomialDerivative(coefficientsX, parameter);
+        localTangent.y = evaluatePolynomialDerivative(coefficientsY, parameter);
+        if (is3D)
+        {
+          localTangent.z = evaluatePolynomialDerivative(coefficientsZ, parameter);
+        }
+        return transformTangent(localTangent);
+      };
+
+      std::vector<glm::dvec3> sampledPoints;
+      sampledPoints.reserve(numPoints);
+
+      double delta = (numPoints > 1) ? (endParameter - startParameter) / static_cast<double>(numPoints - 1) : 0.0;
+      for (int i = 0; i < numPoints; ++i)
+      {
+        double parameter = startParameter + delta * static_cast<double>(i);
+        sampledPoints.push_back(evaluatePoint(parameter));
+      }
+      sampledPoints.front() = evaluatePoint(startParameter);
+      sampledPoints.back() = evaluatePoint(endParameter);
+
+      glm::dvec3 firstWorldTangent = evaluateTangent(startParameter);
+      glm::dvec3 lastWorldTangent = evaluateTangent(endParameter);
+
+      if (glm::length(firstWorldTangent) <= EPS_SMALL && sampledPoints.size() > 1)
+      {
+        firstWorldTangent = sampledPoints[1] - sampledPoints[0];
+      }
+      if (glm::length(lastWorldTangent) <= EPS_SMALL && sampledPoints.size() > 1)
+      {
+        lastWorldTangent = sampledPoints[sampledPoints.size() - 1] - sampledPoints[sampledPoints.size() - 2];
+      }
+
+      if (reverseCurve)
+      {
+        std::reverse(sampledPoints.begin(), sampledPoints.end());
+      }
+
+      for (const auto &point : sampledPoints)
+      {
+        curve.Add(point);
+      }
+
+      bool hasStartTangent = glm::length(firstWorldTangent) > EPS_SMALL;
+      bool hasEndTangent = glm::length(lastWorldTangent) > EPS_SMALL;
+      if (hasStartTangent || hasEndTangent)
+      {
+        if (reverseCurve)
+        {
+          if (hasEndTangent)
+          {
+            curve.segmentStartTangents.push_back(-glm::normalize(lastWorldTangent));
+          }
+          if (hasStartTangent)
+          {
+            curve.endTangent = -glm::normalize(firstWorldTangent);
+          }
+        }
+        else
+        {
+          if (hasStartTangent)
+          {
+            curve.segmentStartTangents.push_back(glm::normalize(firstWorldTangent));
+          }
+          if (hasEndTangent)
+          {
+            curve.endTangent = glm::normalize(lastWorldTangent);
+          }
+        }
+      }
+
+      break;
+    }
     case schema::IFCCLOTHOID:
     {
         // we need numSegments points along the clothoid. 
