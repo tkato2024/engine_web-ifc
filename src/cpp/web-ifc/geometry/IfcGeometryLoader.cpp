@@ -2744,6 +2744,7 @@ namespace webifc::geometry
       segmentParams.trimEnd = endTrim;
       segmentParams.hasTrim = true;
       size_t curvePointsOffset = curve.points.size();
+      size_t segmentStartTangentsOffset = curve.segmentStartTangents.size();
       glm::dvec3 previousEndTangent = curve.endTangent;
       
       segmentParams.ignorePlacement = true;
@@ -2770,101 +2771,124 @@ namespace webifc::geometry
           spdlog::error("[ComputeCurve()] IFCCURVESEGMENT {} has empty parent curve {}", expressID, ParentCurveID);
           break;
       }
+
+      if (applyOwnPlacement)
+      {
+          // Align the trimmed segment start with Placement.Location and Placement.RefDirection.
+          glm::dmat4 placement = GetLocalPlacement(placementID);
+          glm::dvec3 targetOrigin = glm::dvec3(placement[3]);
+          glm::dvec3 targetTangent = glm::normalize(glm::dvec3(placement[0]));
+          glm::dvec3 currentSegmentStart = currentSegmentPoints[0];
+          glm::dvec3 currentStartTangent = glm::dvec3(1.0, 0.0, 0.0);
+          if (curve.segmentStartTangents.size() > segmentStartTangentsOffset)
+          {
+              currentStartTangent = curve.segmentStartTangents.back();
+          }
+          else if (currentSegmentPoints.size() > 1)
+          {
+              glm::dvec3 chord = currentSegmentPoints[1] - currentSegmentPoints[0];
+              if (glm::length(chord) > EPS_SMALL)
+              {
+                  currentStartTangent = glm::normalize(chord);
+              }
+          }
+
+          glm::dmat3 rotation(1.0);
+          double tangentDot = glm::clamp(glm::dot(currentStartTangent, targetTangent), -1.0, 1.0);
+          glm::dvec3 rotationAxis = glm::cross(currentStartTangent, targetTangent);
+          if (glm::length(rotationAxis) <= EPS_SMALL && tangentDot < 0.0)
+          {
+              rotationAxis = glm::cross(currentStartTangent, glm::dvec3(0.0, 0.0, 1.0));
+              if (glm::length(rotationAxis) <= EPS_SMALL)
+              {
+                  rotationAxis = glm::cross(currentStartTangent, glm::dvec3(0.0, 1.0, 0.0));
+              }
+          }
+          if (glm::length(rotationAxis) > EPS_SMALL)
+          {
+              double angle = std::acos(tangentDot);
+              rotation = glm::dmat3(glm::rotate(glm::dmat4(1.0), angle, glm::normalize(rotationAxis)));
+          }
+
+          for (size_t i = 0; i < currentSegmentPoints.size(); ++i)
+          {
+              glm::dvec3& point = currentSegmentPoints[i];
+              glm::dvec3 relativePoint = point - currentSegmentStart;
+              point = rotation * relativePoint + targetOrigin;
+          }
+
+          // Update tangents to the aligned segment frame.
+          glm::dvec3& tangent = curve.endTangent;
+          tangent = rotation * tangent;
+          if (curve.segmentStartTangents.size() > segmentStartTangentsOffset)
+          {
+              curve.segmentStartTangents.back() = rotation * curve.segmentStartTangents.back();
+          }
+
+      }
+
       if (curvePointsOffset > 0)
       {
           // previous segment's end point for continuity check
           glm::dvec3 previousSegmentEndPoint = curve.points[curvePointsOffset - 1];
-                    
+
           bool connectTranslate = false;
           if ((Transition.compare("CONTSAMEGRADIENTSAMECURVATURE") == 0 || Transition.compare("CONTSAMEGRADIENT") == 0))
           {
-              // apply Transition Logic (Enforcing G1/G2 Continuity)
-              applyOwnPlacement = false;
               connectTranslate = true;
-              if (currentSegmentPoints.size() > 1)
+              if (currentSegmentPoints.size() > 1 &&
+                  glm::length(previousEndTangent) > EPS_SMALL)
               {
-                  // Compute the tangent of the current segment
                   glm::dvec3 currentSegmentStart = currentSegmentPoints[0];
-                  glm::dvec3 currentStartTangent = glm::normalize(currentSegmentPoints[1] - currentSegmentPoints[0]);  // this is not precise enough
-                  if (curve.segmentStartTangents.size() > 0)
+                  glm::dvec3 currentStartTangent = glm::normalize(currentSegmentPoints[1] - currentSegmentPoints[0]);
+                  if (curve.segmentStartTangents.size() > segmentStartTangentsOffset)
                   {
                       currentStartTangent = curve.segmentStartTangents.back();  // exact start tangent
                   }
 
-                  // Calculate Rotation Angle (in 2D, assuming Z=0/Z-axis is rotation axis)
-                  double angle_prev = std::atan2(previousEndTangent.y, previousEndTangent.x);
-                  double angle_curr = std::atan2(currentStartTangent.y, currentStartTangent.x);
-                  double rotation_angle = angle_prev - angle_curr;
+                  glm::dvec3 targetTangent = glm::normalize(previousEndTangent);
+                  glm::dmat3 rotation(1.0);
+                  double tangentDot = glm::clamp(glm::dot(currentStartTangent, targetTangent), -1.0, 1.0);
+                  glm::dvec3 rotationAxis = glm::cross(currentStartTangent, targetTangent);
+                  if (glm::length(rotationAxis) <= EPS_SMALL && tangentDot < 0.0)
+                  {
+                      rotationAxis = glm::cross(currentStartTangent, glm::dvec3(0.0, 0.0, 1.0));
+                      if (glm::length(rotationAxis) <= EPS_SMALL)
+                      {
+                          rotationAxis = glm::cross(currentStartTangent, glm::dvec3(0.0, 1.0, 0.0));
+                      }
+                  }
+                  if (glm::length(rotationAxis) > EPS_SMALL)
+                  {
+                      double angle = std::acos(tangentDot);
+                      rotation = glm::dmat3(glm::rotate(glm::dmat4(1.0), angle, glm::normalize(rotationAxis)));
+                  }
 
-                  // Ensure rotation matrix is 3x3 for 2D curve points (with Z=1.0)
-                  glm::dmat3 rotation_matrix = glm::dmat3(1.0);
-                  rotation_matrix[0].x = std::cos(rotation_angle);
-                  rotation_matrix[0].y = std::sin(rotation_angle);
-                  rotation_matrix[1].x = -std::sin(rotation_angle);
-                  rotation_matrix[1].y = std::cos(rotation_angle);
-
-                  // Apply Rotation and Translation to all points
                   for (size_t i = 0; i < currentSegmentPoints.size(); ++i)
                   {
                       glm::dvec3& point = currentSegmentPoints[i];
-
-                      // TRANSLATE points to the origin for rotation (Rotation must be around currentSegmentStart)
                       glm::dvec3 relativePoint = point - currentSegmentStart;
-
-                      // ROTATE the points with dmat3 multiplication, assuming relativePoint is (x, y, 0). 
-                      // We need to convert relativePoint to a homogeneous vector (x, y, 1) for dmat3.
-                      glm::dvec3 rotatedPoint = rotation_matrix * glm::dvec3(relativePoint.x, relativePoint.y, 1.0);
-
-                      // TRANSLATE back from origin (move the rotated point back to P_curr_start)
-                      glm::dvec3 rotatedPointGlobal = glm::dvec3(rotatedPoint.x, rotatedPoint.y, 0.0) + currentSegmentStart;
-
-                      // TRANSLATE to final position (snap start point to P_prev)
-                      point = rotatedPointGlobal + (previousSegmentEndPoint - currentSegmentStart);
+                      point = rotation * relativePoint + currentSegmentStart;
                   }
 
-                  // Update the end tangent of the composite curve
-                  // The new end tangent is simply the original end tangent rotated by rotation_angle
-                  double angle_end = std::atan2(curve.endTangent.y, curve.endTangent.x);
-                  double angle_end_aligned = angle_end + rotation_angle;
-                  curve.endTangent.x = std::cos(angle_end_aligned);
-                  curve.endTangent.y = std::sin(angle_end_aligned);
-                  curve.endTangent.z = 0.0;
+                  curve.endTangent = rotation * curve.endTangent;
+                  if (curve.segmentStartTangents.size() > segmentStartTangentsOffset)
+                  {
+                      curve.segmentStartTangents.back() = rotation * curve.segmentStartTangents.back();
+                  }
               }
           }
 
-		  if ((Transition.compare("CONTINUOUS") == 0 || connectTranslate) )  // will be done below anyway
+          if ((Transition.compare("CONTINUOUS") == 0 || connectTranslate))
           {
-              applyOwnPlacement = false;
-              // Connect previous segment's end point to current segments start point
               glm::dvec3 currentSegmentStartPoint = currentSegmentPoints[0];
-
-              // Compute the necessary translation to align the current segment's start point with the previous segment's end point.
               glm::dvec3 translation = previousSegmentEndPoint - currentSegmentStartPoint;
 
-              // Apply translation to all points of the current segment
               for (size_t i = 0; i < currentSegmentPoints.size(); ++i)
               {
                   currentSegmentPoints[i] += translation;
               }
           }
-      }
-
-      if (applyOwnPlacement)
-      {
-          // apply placementID
-          glm::dmat4 placement = GetLocalPlacement(placementID);
-          for (size_t i = 0; i < currentSegmentPoints.size(); ++i)
-          {
-              glm::dvec3& point = currentSegmentPoints[i];
-              glm::dvec4 pointHomogenious(point, 1.0);
-              pointHomogenious = placement * pointHomogenious;
-              point = glm::dvec3(pointHomogenious);
-          }
-
-          // Update the end tangent of the composite curve
-          glm::dvec3& tangent = curve.endTangent;
-          tangent = glm::dmat3(placement) * tangent;
-
       }
       
       // Re-write the globally aligned points back into the main curve storage
