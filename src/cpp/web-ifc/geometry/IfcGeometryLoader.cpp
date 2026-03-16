@@ -1995,6 +1995,14 @@ namespace webifc::geometry
 
       break;
     }
+    case schema::IFCSEGMENTEDREFERENCECURVE:
+    {
+      _loader.MoveToArgumentOffset(expressID, 2);
+      uint32_t baseCurveID = _loader.GetRefArgument();
+      ComputeCurve(baseCurveID, curve, params);
+
+      break;
+    }
 
       // TODO: review and simplify
     case schema::IFCLINE:
