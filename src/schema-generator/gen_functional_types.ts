@@ -16,6 +16,9 @@ let cppPropertyNamesList: Array<String> = [];
 let cppPropertyTypes: Array<string> = [];
 let cppPropertyTypesList: Array<String> = [];
 let cppPropertyCounts: Array<String> = [];
+let cppInverseArrays: Array<string> = [];
+let cppInheritedTypes: Array<string> = [];
+let cppInverseProps: Array<string> = [];
 let chSchema: Array<string> = [];
 
 let completeifcElementList = new Set<string>();
@@ -30,6 +33,8 @@ let typeList = new Set<string>();
 cppPropertyNames.push("std::string getPropertyName(IFC_SCHEMA schema,uint32_t typeCode,uint32_t prop) {")
 cppPropertyTypes.push("uint32_t getPropertyTypeCode(IFC_SCHEMA schema,uint32_t typeCode,uint32_t prop) {")
 cppPropertyCounts.push("uint32_t getPropertyCount(IFC_SCHEMA schema,uint32_t typeCode) {")
+cppInheritedTypes.push("inline std::span<const uint32_t> getInheritedTypes(IFC_SCHEMA schema, uint32_t typeCode) {")
+cppInverseProps.push("inline std::span<const InversePropertyDef> getInverseProperties(IFC_SCHEMA schema, uint32_t typeCode) {")
 
 
 tsSchema.push('/**');
@@ -279,16 +284,22 @@ for (var i = 0; i < files.length; i++) {
     cppPropertyNames.push("if (schema == "+schemaNameClean+") {")
     cppPropertyTypes.push("if (schema == "+schemaNameClean+") {")
     cppPropertyCounts.push("if (schema == "+schemaNameClean+") {")
+    cppInheritedTypes.push("if (schema == "+schemaNameClean+") {")
+    cppInverseProps.push("if (schema == "+schemaNameClean+") {")
     first = false;
   } else {
     cppPropertyNames.push("} else if (schema == "+schemaNameClean+") {")
     cppPropertyTypes.push("} else if (schema == "+schemaNameClean+") {")
     cppPropertyCounts.push("} else if (schema == "+schemaNameClean+") {")
+    cppInheritedTypes.push("} else if (schema == "+schemaNameClean+") {")
+    cppInverseProps.push("} else if (schema == "+schemaNameClean+") {")
   }
 
   cppPropertyNames.push("switch (typeCode) {")
   cppPropertyTypes.push("switch (typeCode) {")
   cppPropertyCounts.push("switch (typeCode) {")
+  cppInheritedTypes.push("switch (typeCode) {")
+  cppInverseProps.push("switch (typeCode) {")
   
 
   for (var x=0; x < entities.length; x++) {
@@ -319,11 +330,48 @@ for (var i = 0; i < files.length; i++) {
     cppPropertyNames.push("}")
     cppPropertyTypes.push("}")
 
+    if (entities[x].children.length > 0) {
+      let inheritedTypesName = `kInheritedTypes_${schemaNameClean}_${entities[x].name}`;
+      cppInverseArrays.push(
+        `inline constexpr std::array<uint32_t, ${entities[x].children.length}> ${inheritedTypesName} = {${entities[x].children
+          .map((c) => `${c.toUpperCase()}`)
+          .join(", ")}};`
+      );
+      cppInheritedTypes.push("case  "+crcCode+": return "+inheritedTypesName+";")
+    }
+
+    if (entities[x].derivedInverseProps.length > 0) {
+      let inversePropsName = `kInverseProps_${schemaNameClean}_${entities[x].name}`;
+      let inverseEntries = entities[x].derivedInverseProps.map((prop) => {
+        let pos = 0;
+        for (let targetEntity of entities) {
+          if (targetEntity.name == prop.type) {
+            for (let j = 0; j < targetEntity.derivedProps.length; j++) {
+              if (targetEntity.derivedProps[j].name == prop.for) {
+                pos = j;
+                break;
+              }
+            }
+            break;
+          }
+        }
+        return `InversePropertyDef{"${prop.name}", ${prop.type.toUpperCase()}, ${pos}, ${prop.set}}`;
+      });
+      cppInverseArrays.push(
+        `inline constexpr std::array<InversePropertyDef, ${entities[x].derivedInverseProps.length}> ${inversePropsName} = {{${inverseEntries.join(", ")}}};`
+      );
+      cppInverseProps.push("case  "+crcCode+": return "+inversePropsName+";")
+    }
+
   }
 
   cppPropertyCounts.push("}")
   cppPropertyNames.push("}")
   cppPropertyTypes.push("}")
+  cppInheritedTypes.push("default: return std::span<const uint32_t>{};")
+  cppInheritedTypes.push("}")
+  cppInverseProps.push("default: return std::span<const InversePropertyDef>{};")
+  cppInverseProps.push("}")
 
  
 }
@@ -331,6 +379,12 @@ for (var i = 0; i < files.length; i++) {
   cppPropertyCounts.push("}")
   cppPropertyNames.push("}")
   cppPropertyTypes.push("}")
+  cppInheritedTypes.push("}")
+  cppInheritedTypes.push("return std::span<const uint32_t>{};")
+  cppInheritedTypes.push("}")
+  cppInverseProps.push("}")
+  cppInverseProps.push("return std::span<const InversePropertyDef>{};")
+  cppInverseProps.push("}")
 
 // now write out the global c++/ts metadata. All the WASM needs to know about is a list of all entities
 
@@ -402,9 +456,30 @@ cppPropertyTypes.push("}")
 
 cppPropertyCounts.push("}")
 
+let cppInverseHeader: Array<string> = [];
+cppInverseHeader.push("#pragma once");
+cppInverseHeader.push("// inverse metadata for IFC schema - this is a generated file - please see schema generator in src/schema");
+cppInverseHeader.push("#include <array>");
+cppInverseHeader.push("#include <cstdint>");
+cppInverseHeader.push("#include <span>");
+cppInverseHeader.push("#include <string_view>");
+cppInverseHeader.push("#include \"ifc-schema.h\"");
+cppInverseHeader.push("namespace webifc::schema {");
+cppInverseHeader.push("struct InversePropertyDef {");
+cppInverseHeader.push("  std::string_view name;");
+cppInverseHeader.push("  uint32_t target_type;");
+cppInverseHeader.push("  uint32_t position;");
+cppInverseHeader.push("  bool is_set;");
+cppInverseHeader.push("};");
+cppInverseHeader.push(...cppInverseArrays);
+cppInverseHeader.push(...cppInheritedTypes);
+cppInverseHeader.push(...cppInverseProps);
+cppInverseHeader.push("}");
+
 fs.writeFileSync("../cpp/web-ifc/schema/ifc-schema.h", chSchema.join("\n")); 
 fs.writeFileSync("../cpp/web-ifc/schema/schema-functions.cpp", cppSchema.join("\n")); 
 fs.writeFileSync("../cpp/web-ifc/schema/schema-names.h", [ ...cppPropertyNames, ...cppPropertyTypes, ...cppPropertyCounts].join("\n")); 
+fs.writeFileSync("../cpp/web-ifc/schema/schema-inverses.h", cppInverseHeader.join("\n"));
 fs.writeFileSync("../ts/ifc-schema.ts", tsSchema.join("\n")); 
 
 console.log(`...Done!`);
