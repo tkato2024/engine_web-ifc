@@ -34,7 +34,7 @@ cppPropertyNames.push("std::string getPropertyName(IFC_SCHEMA schema,uint32_t ty
 cppPropertyTypes.push("uint32_t getPropertyTypeCode(IFC_SCHEMA schema,uint32_t typeCode,uint32_t prop) {")
 cppPropertyCounts.push("uint32_t getPropertyCount(IFC_SCHEMA schema,uint32_t typeCode) {")
 cppInheritedTypes.push("inline std::span<const uint32_t> getInheritedTypes(IFC_SCHEMA schema, uint32_t typeCode) {")
-cppInverseProps.push("inline std::span<const InversePropertyDef> getInverseProperties(IFC_SCHEMA schema, uint32_t typeCode) {")
+cppInverseProps.push("inline std::span<const InverseAttributeDef> getInverseAttributes(IFC_SCHEMA schema, uint32_t typeCode) {")
 
 
 tsSchema.push('/**');
@@ -341,7 +341,7 @@ for (var i = 0; i < files.length; i++) {
     }
 
     if (entities[x].derivedInverseProps.length > 0) {
-      let inversePropsName = `kInverseProps_${schemaNameClean}_${entities[x].name}`;
+      let inversePropsName = `kInverseAttributes_${schemaNameClean}_${entities[x].name}`;
       let inverseEntries = entities[x].derivedInverseProps.map((prop) => {
         let pos = 0;
         for (let targetEntity of entities) {
@@ -355,10 +355,10 @@ for (var i = 0; i < files.length; i++) {
             break;
           }
         }
-        return `InversePropertyDef{"${prop.name}", ${prop.type.toUpperCase()}, ${pos}, ${prop.set}}`;
+        return `InverseAttributeDef{"${prop.name}", ${prop.type.toUpperCase()}, ${pos}, ${prop.set}}`;
       });
       cppInverseArrays.push(
-        `inline constexpr std::array<InversePropertyDef, ${entities[x].derivedInverseProps.length}> ${inversePropsName} = {{${inverseEntries.join(", ")}}};`
+        `inline constexpr std::array<InverseAttributeDef, ${entities[x].derivedInverseProps.length}> ${inversePropsName} = {{${inverseEntries.join(", ")}}};`
       );
       cppInverseProps.push("case  "+crcCode+": return "+inversePropsName+";")
     }
@@ -370,7 +370,7 @@ for (var i = 0; i < files.length; i++) {
   cppPropertyTypes.push("}")
   cppInheritedTypes.push("default: return std::span<const uint32_t>{};")
   cppInheritedTypes.push("}")
-  cppInverseProps.push("default: return std::span<const InversePropertyDef>{};")
+  cppInverseProps.push("default: return std::span<const InverseAttributeDef>{};")
   cppInverseProps.push("}")
 
  
@@ -383,7 +383,7 @@ for (var i = 0; i < files.length; i++) {
   cppInheritedTypes.push("return std::span<const uint32_t>{};")
   cppInheritedTypes.push("}")
   cppInverseProps.push("}")
-  cppInverseProps.push("return std::span<const InversePropertyDef>{};")
+  cppInverseProps.push("return std::span<const InverseAttributeDef>{};")
   cppInverseProps.push("}")
 
 // now write out the global c++/ts metadata. All the WASM needs to know about is a list of all entities
@@ -458,14 +458,14 @@ cppPropertyCounts.push("}")
 
 let cppInverseHeader: Array<string> = [];
 cppInverseHeader.push("#pragma once");
-cppInverseHeader.push("// inverse metadata for IFC schema - this is a generated file - please see schema generator in src/schema");
+cppInverseHeader.push("// inverse attribute metadata for IFC schema - this is a generated file - please see schema generator in src/schema");
 cppInverseHeader.push("#include <array>");
 cppInverseHeader.push("#include <cstdint>");
 cppInverseHeader.push("#include <span>");
 cppInverseHeader.push("#include <string_view>");
 cppInverseHeader.push("#include \"ifc-schema.h\"");
 cppInverseHeader.push("namespace webifc::schema {");
-cppInverseHeader.push("struct InversePropertyDef {");
+cppInverseHeader.push("struct InverseAttributeDef {");
 cppInverseHeader.push("  std::string_view name;");
 cppInverseHeader.push("  uint32_t target_type;");
 cppInverseHeader.push("  uint32_t position;");
