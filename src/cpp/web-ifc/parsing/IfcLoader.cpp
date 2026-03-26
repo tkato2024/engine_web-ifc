@@ -46,11 +46,31 @@ namespace webifc::parsing {
      return ret;
    }
 
-   const std::vector<uint32_t> IfcLoader::GetReferrers(const uint32_t expressID) const
+   const std::vector<uint32_t> &IfcLoader::GetReferrers(const uint32_t expressID) const
    {
-      if (!IsValidExpressID(expressID)) return {};
-      if (_referrers.count(expressID) == 0) return {};
-      return _referrers.at(expressID);
+      static const std::vector<uint32_t> emptyReferrers;
+
+      if (!IsValidExpressID(expressID)) return emptyReferrers;
+
+      BuildReferrers();
+
+      const auto referrerIt = _referrers.find(expressID);
+      if (referrerIt == _referrers.end()) return emptyReferrers;
+
+      return referrerIt->second;
+   }
+
+   void IfcLoader::BuildReferrers() const
+   {
+      if (_referrersBuilt) return;
+
+      _referrers.clear();
+      for (const auto &[expressID, line] : _lines)
+      {
+        AddLineReferences(expressID, line->tapeOffset);
+      }
+
+      _referrersBuilt = true;
    }
    
    void IfcLoader::LoadFile(const std::function<uint32_t(char *, size_t, size_t)> &requestData)
@@ -263,7 +283,6 @@ namespace webifc::parsing {
                 _ifcTypeToExpressID[currentIfcType].push_back(currentExpressID);
                 _maxExpressId = std::max(_maxExpressId, currentExpressID);
                 _lines[currentExpressID]=l;
-                AddLineReferences(currentExpressID, currentTapeOffset);
                 currentExpressID = 0;
               }
               currentIfcType = 0;
@@ -448,7 +467,10 @@ namespace webifc::parsing {
       const auto lineIt = _lines.find(expressID);
       if (lineIt == _lines.end()) return;
 
-      RemoveLineReferences(expressID, lineIt->second->tapeOffset);
+      if (_referrersBuilt)
+      {
+        RemoveLineReferences(expressID, lineIt->second->tapeOffset);
+      }
       _lines.erase(expressID);
   }
   
@@ -465,12 +487,21 @@ namespace webifc::parsing {
         _lines[expressID]=line;
   		_ifcTypeToExpressID[type].push_back(expressID);
         _maxExpressId = std::max(expressID, _maxExpressId);
-        AddLineReferences(expressID, start);
+        if (_referrersBuilt)
+        {
+          AddLineReferences(expressID, start);
+        }
       }
       else {
-          RemoveLineReferences(expressID, lineIt->second->tapeOffset);
+          if (_referrersBuilt)
+          {
+            RemoveLineReferences(expressID, lineIt->second->tapeOffset);
+          }
           _lines[expressID]->tapeOffset = start;
-          AddLineReferences(expressID, start);
+          if (_referrersBuilt)
+          {
+            AddLineReferences(expressID, start);
+          }
       }
   }
 
@@ -772,7 +803,7 @@ namespace webifc::parsing {
     }
 
     IfcLoader * IfcLoader::Clone() {
-      return new IfcLoader(_maxExpressId, _lineWriterBuffer,_schemaManager,  _tokenStream->Clone(), _lines, _headerLines, _ifcTypeToExpressID, _referrers);
+      return new IfcLoader(_maxExpressId, _lineWriterBuffer,_schemaManager,  _tokenStream->Clone(), _lines, _headerLines, _ifcTypeToExpressID, _referrers, _referrersBuilt);
     }
 
     std::unordered_set<uint32_t> IfcLoader::CollectLineReferences(uint32_t tapeOffset) const
@@ -850,7 +881,7 @@ namespace webifc::parsing {
       }
     }
 
-    void IfcLoader::AddLineReferences(uint32_t expressID, uint32_t tapeOffset)
+    void IfcLoader::AddLineReferences(uint32_t expressID, uint32_t tapeOffset) const
     {
       auto references = CollectLineReferences(tapeOffset);
       for (auto referenceID : references)
@@ -859,7 +890,7 @@ namespace webifc::parsing {
       }
     }
 
-    void IfcLoader::RemoveLineReferences(uint32_t expressID, uint32_t tapeOffset)
+    void IfcLoader::RemoveLineReferences(uint32_t expressID, uint32_t tapeOffset) const
     {
       auto references = CollectLineReferences(tapeOffset);
       for (auto referenceID : references)
@@ -873,8 +904,8 @@ namespace webifc::parsing {
       }
     }
 
-    IfcLoader::IfcLoader(uint32_t maxExpressId,uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager, IfcTokenStream * tokenStream, std::unordered_map<uint32_t,IfcLine*> &lines, std::vector<IfcLine*> &headerLines,std::unordered_map<uint32_t, std::vector<uint32_t>> &ifcTypeToExpressID, std::unordered_map<uint32_t, std::vector<uint32_t>> &referrers)
-      : _maxExpressId(maxExpressId) , _lineWriterBuffer(lineWriterBuffer), _schemaManager(schemaManager), _tokenStream(tokenStream), _lines(lines) , _headerLines(headerLines), _ifcTypeToExpressID(ifcTypeToExpressID), _referrers(referrers)
+    IfcLoader::IfcLoader(uint32_t maxExpressId,uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager, IfcTokenStream * tokenStream, std::unordered_map<uint32_t,IfcLine*> &lines, std::vector<IfcLine*> &headerLines,std::unordered_map<uint32_t, std::vector<uint32_t>> &ifcTypeToExpressID, std::unordered_map<uint32_t, std::vector<uint32_t>> &referrers, bool referrersBuilt)
+      : _maxExpressId(maxExpressId) , _lineWriterBuffer(lineWriterBuffer), _schemaManager(schemaManager), _tokenStream(tokenStream), _lines(lines) , _headerLines(headerLines), _ifcTypeToExpressID(ifcTypeToExpressID), _referrers(referrers), _referrersBuilt(referrersBuilt)
     {}
     
 }
