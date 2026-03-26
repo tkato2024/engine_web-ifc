@@ -21,16 +21,16 @@ namespace webifc::parsing
 	class IfcLoader {
   
     public:
-      struct ReferrerEntry
+      struct InverseReference
       {
-        uint32_t referrerID;
+        uint32_t expressID;
         uint16_t argumentIndex;
       };
 
       IfcLoader(uint32_t tapeSize, uint64_t memoryLimit,uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager);  
       ~IfcLoader();
       const std::vector<uint32_t> GetHeaderLinesWithType(const uint32_t type) const;
-      const std::vector<ReferrerEntry> &GetReferrers(const uint32_t expressID) const;
+      const std::vector<InverseReference> &GetReferrers(const uint32_t expressID) const;
       void LoadFile(const std::function<uint32_t(char *, size_t, size_t)> &requestData);
       void LoadFile(std::istream &requestData);
       void SaveFile(const std::function<void(char *, size_t)> &outputData, bool orderLinesByExpressID) const;
@@ -85,12 +85,12 @@ namespace webifc::parsing
         uint32_t ifcType;
         uint32_t tapeOffset;
       };
-      struct LineReference
+      struct ForwardReference
       {
-        uint32_t referenceID;
+        uint32_t expressID;
         uint16_t argumentIndex;
       };
-      IfcLoader(uint32_t maxExpressId, uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager, IfcTokenStream * tokenStream, std::unordered_map<uint32_t,IfcLine*> &lines, std::vector<IfcLine*> &headerLines,std::unordered_map<uint32_t, std::vector<uint32_t>> &ifcTypeToExpressID, std::unordered_map<uint32_t, std::vector<ReferrerEntry>> &referrers, bool referrersBuilt);
+      IfcLoader(uint32_t maxExpressId, uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager, IfcTokenStream * tokenStream, std::unordered_map<uint32_t,IfcLine*> &lines, std::vector<IfcLine*> &headerLines,std::unordered_map<uint32_t, std::vector<uint32_t>> &ifcTypeToExpressID, std::unordered_map<uint32_t, std::vector<InverseReference>> &referrers, bool referrersBuilt);
       uint32_t _maxExpressId;
       const uint32_t _lineWriterBuffer;
       const schema::IfcSchemaManager &_schemaManager;
@@ -98,12 +98,12 @@ namespace webifc::parsing
       std::unordered_map<uint32_t,IfcLine*> _lines;
       std::vector<IfcLine*> _headerLines;
       std::unordered_map<uint32_t, std::vector<uint32_t>> _ifcTypeToExpressID;
-      mutable std::unordered_map<uint32_t, std::vector<ReferrerEntry>> _referrers;
+      mutable std::unordered_map<uint32_t, std::vector<InverseReference>> _referrers;
       mutable bool _referrersBuilt = false;
       void ParseLines();
       void BuildReferrers() const;
       void ArgumentOffset(const uint32_t argumentIndex) const;      
-      std::vector<LineReference> CollectLineReferences(uint32_t tapeOffset) const;
+      std::vector<ForwardReference> CollectLineReferences(uint32_t tapeOffset) const;
       void CollectReferencesFromCurrentValue(std::unordered_set<uint32_t> &references) const;
       void AddLineReferences(uint32_t expressID, uint32_t tapeOffset) const;
       void RemoveLineReferences(uint32_t expressID, uint32_t tapeOffset) const;
