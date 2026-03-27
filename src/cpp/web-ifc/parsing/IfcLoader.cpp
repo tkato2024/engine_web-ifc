@@ -827,11 +827,17 @@ namespace webifc::parsing {
       }
       _tokenStream->ReadString();
 
+      if (static_cast<IfcTokenType>(_tokenStream->Read<char>()) != IfcTokenType::SET_BEGIN)
+      {
+        _tokenStream->MoveTo(currentOffset);
+        return references;
+      }
+
       uint16_t argumentIndex = 0;
       while (!_tokenStream->IsAtEnd())
       {
         IfcTokenType token = static_cast<IfcTokenType>(_tokenStream->Read<char>());
-        if (token == IfcTokenType::LINE_END) break;
+        if (token == IfcTokenType::SET_END || token == IfcTokenType::LINE_END) break;
 
         _tokenStream->Back();
 
