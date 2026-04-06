@@ -19,47 +19,24 @@ inline bool isConvexOrColinear(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c)
 inline IfcCurve Build3DArc3Pt(const glm::dvec3 &p1, const glm::dvec3 &p2, const glm::dvec3 &p3, uint16_t circleSegments, double EPS_MINSIZE)
 {
     spdlog::debug("[Build3DArc3Pt({})]");
-    // Calculate the center of the circle
     glm::dvec3 v1 = p2 - p1;
     glm::dvec3 v2 = p3 - p1;
-    glm::dvec3 normal = glm::normalize(glm::cross(v1, v2));
-    glm::dvec3 mid1 = 0.5 * (p1 + p2);
-    glm::dvec3 mid2 = 0.5 * (p1 + p3);
-    glm::dvec3 center;
+    glm::dvec3 crossV = glm::cross(v1, v2);
+    double crossLen = glm::length(crossV);
 
-    if (glm::length(glm::cross(v1, v2)) < EPS_MINSIZE)
+    if (crossLen < EPS_MINSIZE)
     {
         // Points are collinear, so there's no unique circle.
         // You can handle this case differently or return an error.
         // For simplicity, let's return an empty curve.
         return IfcCurve();
     }
-    else
-    {
-        // Calculate the center of the circle
-        double Cx = p2.x-p1.x;
-        double Cy = p2.y-p1.y;
-        double Cz = p2.z-p1.z;
-        double Bx = p3.x-p1.x;
-        double By = p3.y-p1.y;
-        double Bz = p3.z-p1.z;
-        double B2 = p1.x*p1.x-p3.x*p3.x+p1.y*p1.y-p3.y*p3.y+p1.z*p1.z-p3.z*p3.z;
-        double C2 = p1.x*p1.x-p2.x*p2.x+p1.y*p1.y-p2.y*p2.y+p1.z*p1.z-p2.z*p2.z;
 
-        double CByz = Cy*Bz-Cz*By;
-        double CBxz = Cx*Bz-Cz*Bx;
-        double CBxy = Cx*By-Cy*Bx;
-        double ZZ1 = -(Bz-Cz*Bx/Cx)/(By-Cy*Bx/Cx);
-        double Z01 = -(B2-Bx/Cx*C2)/(2*(By-Cy*Bx/Cx));
-        double ZZ2 = -(ZZ1*Cy+Cz)/Cx;
-        double Z02 = -(2*Z01*Cy+C2)/(2*Cx);
-
-        double dz = -((Z02-p1.x)*CByz-(Z01-p1.y)*CBxz-p1.z*CBxy)/(ZZ2*CByz-ZZ1*CBxz+CBxy);
-        double dx = ZZ2*dz + Z02;
-        double dy = ZZ1*dz + Z01;
-
-		center = glm::dvec3(dx, dy, dz);
-    }
+    // Compute the circumcenter with a coordinate-system-independent formula.
+    double denom = 2.0 * glm::dot(crossV, crossV);
+    glm::dvec3 center = p1 +
+        (glm::cross(crossV, v1) * glm::dot(v2, v2) +
+         glm::cross(v2, crossV) * glm::dot(v1, v1)) / denom;
 
     // Calculate the radius
     double radius = glm::distance(center, p1);
