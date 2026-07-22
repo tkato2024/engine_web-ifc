@@ -19,53 +19,49 @@ inline bool isConvexOrColinear(glm::dvec2 a, glm::dvec2 b, glm::dvec2 c)
 inline IfcCurve Build3DArc3Pt(const glm::dvec3 &p1, const glm::dvec3 &p2, const glm::dvec3 &p3, uint16_t circleSegments, double EPS_MINSIZE)
 {
     spdlog::debug("[Build3DArc3Pt({})]");
-    glm::dvec3 v1 = p2 - p1;
-    glm::dvec3 v2 = p3 - p1;
-    glm::dvec3 crossV = glm::cross(v1, v2);
-    double crossLen = glm::length(crossV);
 
-    if (crossLen < EPS_MINSIZE)
-    {
-        // Points are collinear, so there's no unique circle.
-        // You can handle this case differently or return an error.
-        // For simplicity, let's return an empty curve.
-        return IfcCurve();
-    }
+    glm::dvec3 a = p2 - p1;
+    glm::dvec3 b = p3 - p1;
+    glm::dvec3 n = glm::cross(a, b);
 
-    // Compute the circumcenter with a coordinate-system-independent formula.
-    double denom = 2.0 * glm::dot(crossV, crossV);
-    glm::dvec3 center = p1 +
-        (glm::cross(crossV, v1) * glm::dot(v2, v2) +
-         glm::cross(v2, crossV) * glm::dot(v1, v1)) / denom;
+	double n2 = glm::dot(n, n);
+	if (n2 < EPS_MINSIZE * EPS_MINSIZE)
+	{
+		return IfcCurve();
+	}
 
-    // Calculate the radius
+    // Numerically stable circumcenter: no division by individual coordinates
+    glm::dvec3 numerator = glm::dot(b, b) * glm::cross(n, a) + glm::dot(a, a) * glm::cross(b, n);
+    glm::dvec3 center = p1 + numerator / (2.0 * glm::dot(n, n));
+
     double radius = glm::distance(center, p1);
 
-    // Using geometrical subdivision to create points on the arc
-    std::vector<glm::dvec3> pointList;
-    pointList.push_back(p1);
-    pointList.push_back(p2);
-    pointList.push_back(p3);
+    // Local 2D basis in the arc plane
+    glm::dvec3 normal = glm::normalize(n);
+    glm::dvec3 xAxis  = glm::normalize(p1 - center);
+    glm::dvec3 yAxis  = glm::normalize(glm::cross(normal, xAxis));
 
-    while (pointList.size() < (size_t)circleSegments)
-    {
-        std::vector<glm::dvec3> tempPointList;
-        for (size_t j = 0; j < pointList.size() - 1; j++)
-        {
-            glm::dvec3 pt = (pointList[j] + pointList[j + 1]) / 2.0;
-            glm::dvec3 vc = glm::normalize(pt - center);
-            pt = center + vc * radius;
-            tempPointList.push_back(pointList[j]);
-            tempPointList.push_back(pt);
-        }
-        tempPointList.push_back(pointList.back());
-        pointList = tempPointList;
-    }
+    auto getAngle = [&](const glm::dvec3 &p) -> double {
+        glm::dvec3 r = glm::normalize(p - center);
+        double angle = std::atan2(glm::dot(r, yAxis), glm::dot(r, xAxis));
+        if (angle < 0.0) angle += 2.0 * CONST_PI;
+        return angle;
+    };
 
+    double angle2 = getAngle(p2);
+    double angle3 = getAngle(p3);
+
+    // Traverse from p1 (angle 0) to p3, passing through p2.
+    // If angle3 > angle2 the CCW arc covers p2; otherwise go CW.
+    double totalAngle = (angle3 > angle2) ? angle3 : (angle3 - 2.0 * CONST_PI);
+
+    int nPts = std::max(static_cast<int>(circleSegments + 1), 2);
     IfcCurve curve;
-    for (size_t j = 0; j < pointList.size(); j++)
+    for (int i = 0; i < nPts; i++)
     {
-        curve.Add(pointList.at(j));
+        double t = static_cast<double>(i) / (nPts - 1);
+        double angle = t * totalAngle;
+        curve.Add(center + radius * (std::cos(angle) * xAxis + std::sin(angle) * yAxis));
     }
 
     return curve;

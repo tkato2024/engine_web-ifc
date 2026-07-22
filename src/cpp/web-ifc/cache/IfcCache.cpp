@@ -30,18 +30,14 @@ namespace webifc::cache
   void IfcCache::Clear()
   {
     _expressIDToPlacement.clear();
-    std::unordered_map<uint32_t, glm::dmat4>().swap(_expressIDToPlacement);
     _cartesianPoint3DCache.clear();
-    std::unordered_map<uint32_t, glm::dvec3>().swap(_cartesianPoint3DCache);
     _cartesianPoint2DCache.clear();
-    std::unordered_map<uint32_t, glm::dvec2>().swap(_cartesianPoint2DCache);
     _directionCache.clear();
-    std::unordered_map<uint32_t, glm::dvec3>().swap(_directionCache);
   }
 
-  std::unordered_map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelVoidsMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelVoidsMap()
   {
-    std::unordered_map<uint32_t, std::vector<uint32_t>> resultVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> resultVector;
     auto relVoids = _loader.GetExpressIDsWithType(schema::IFCRELVOIDSELEMENT);
 
     for (uint32_t relVoidID : relVoids)
@@ -57,9 +53,9 @@ namespace webifc::cache
     return resultVector;
   }
 
-  std::unordered_map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelAggregatesMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelAggregatesMap()
   {
-    std::unordered_map<uint32_t, std::vector<uint32_t>> resultVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> resultVector;
     auto relAggregates = _loader.GetExpressIDsWithType(schema::IFCRELAGGREGATES);
 
     for (uint32_t relAggregateID : relAggregates)
@@ -90,9 +86,9 @@ namespace webifc::cache
     return resultVector;
   }
 
-  std::unordered_map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelNestsMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelNestsMap()
   {
-    std::unordered_map<uint32_t, std::vector<uint32_t>> resultVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> resultVector;
     auto relNests = _loader.GetExpressIDsWithType(schema::IFCRELNESTS);
 
     for (uint32_t relNestID : relNests)
@@ -111,9 +107,9 @@ namespace webifc::cache
     return resultVector;
   }
 
-  std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulateStyledItemMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulateStyledItemMap()
   {
-    std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> returnVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> returnVector;
     auto styledItems = _loader.GetExpressIDsWithType(schema::IFCSTYLEDITEM);
 
     for (uint32_t styledItemID : styledItems)
@@ -137,9 +133,9 @@ namespace webifc::cache
     return returnVector;
   }
 
-  std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulateRelMaterialsMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulateRelMaterialsMap()
   {
-    std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
     auto styledItems = _loader.GetExpressIDsWithType(schema::IFCRELASSOCIATESMATERIAL);
 
     for (uint32_t styledItemID : styledItems)
@@ -161,9 +157,9 @@ namespace webifc::cache
     return resultVector;
   }
 
-  std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulateMaterialDefinitionsMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulateMaterialDefinitionsMap()
   {
-    std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
     auto matDefs = _loader.GetExpressIDsWithType(schema::IFCMATERIALDEFINITIONREPRESENTATION);
 
     for (uint32_t styledItemID : matDefs)
@@ -185,9 +181,9 @@ namespace webifc::cache
     return resultVector;
   }
 
-  std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulatePresentationLayerStylesMap()
+  ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> IfcCache::PopulatePresentationLayerStylesMap()
   {
-    std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
+    ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> resultVector;
     auto layers = _loader.GetExpressIDsWithType(schema::IFCPRESENTATIONLAYERWITHSTYLE);
 
     for (uint32_t layerID : layers)
@@ -393,27 +389,27 @@ namespace webifc::cache
       return 1;
   }
 
-  const std::unordered_map<uint32_t, std::vector<uint32_t>> &IfcCache::GetRelVoids() const
+  const ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> &IfcCache::GetRelVoids() const
   {
     return _relVoids;
   }
 
-  const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetStyledItems() const
+  const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetStyledItems() const
   {
     return _styledItems;
   }
 
-  const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetRelMaterials() const
+  const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetRelMaterials() const
   {
     return _relMaterials;
   }
 
-  const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetMaterialDefinitions() const
+  const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetMaterialDefinitions() const
   {
     return _materialDefinitions;
   }
 
-  const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetPresentationLayerStyles() const
+  const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &IfcCache::GetPresentationLayerStyles() const
   {
     return _presentationLayerStyles;
   }
@@ -432,34 +428,34 @@ namespace webifc::cache
     return _angularScalingFactor;
   }
 
-  const std::unordered_map<uint32_t, std::vector<uint32_t>> &IfcCache::GetRelAggregates() const {
+  const ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> &IfcCache::GetRelAggregates() const {
     return _relAggregates;
   }
 
-  const std::unordered_map<uint32_t, std::vector<uint32_t>> &IfcCache::GetRelNests() const {
+  const ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> &IfcCache::GetRelNests() const {
     return _relNests;
   }
 
-  std::unordered_map<uint32_t, glm::dvec3> &IfcCache::GetCartesianPoint3DCache() {
+  ankerl::unordered_dense::map<uint32_t, glm::dvec3> &IfcCache::GetCartesianPoint3DCache() {
     return _cartesianPoint3DCache;
   }
-  
-  std::unordered_map<uint32_t, glm::dvec2> &IfcCache::GetCartesianPoint2DCache() {
+
+  ankerl::unordered_dense::map<uint32_t, glm::dvec2> &IfcCache::GetCartesianPoint2DCache() {
     return _cartesianPoint2DCache;
   }
 
-  std::unordered_map<uint32_t, glm::dvec3> &IfcCache::GetDirectionCache() {
+  ankerl::unordered_dense::map<uint32_t, glm::dvec3> &IfcCache::GetDirectionCache() {
     return _directionCache;
   }
-  
-  std::unordered_map<uint32_t, glm::dmat4> &IfcCache::GetExpressIDToPlacement() {
+
+  ankerl::unordered_dense::map<uint32_t, glm::dmat4> &IfcCache::GetExpressIDToPlacement() {
     return _expressIDToPlacement;
   }
 
   std::vector<geometry::IfcCurve> &IfcCache::GetLocalCurvesList() {
     return _localCurvesList;
   }
-  
+
   std::vector<uint32_t> &IfcCache::GetLocalCurvesIndices() {
     return _localcurvesIndices;
   }
@@ -470,7 +466,7 @@ namespace webifc::cache
     return newCache;
   }
 
-  IfcCache::IfcCache(const webifc::parsing::IfcLoader &loader, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relVoids, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relNests, const std::unordered_map<uint32_t, std::vector<uint32_t>> &relAggregates, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &styledItems, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &relMaterials, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &materialDefinitions, const std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &presentationLayerStyles, double linearScalingFactor, double squaredScalingFactor, double cubicScalingFactor, double angularScalingFactor, std::string angleUnits, const std::vector<geometry::IfcCurve> &localCurvesList, const std::vector<uint32_t> &localcurvesIndices, std::unordered_map<uint32_t, glm::dmat4> expressIDToPlacement)
+  IfcCache::IfcCache(const webifc::parsing::IfcLoader &loader, const ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> &relVoids, const ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> &relNests, const ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> &relAggregates, const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &styledItems, const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &relMaterials, const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &materialDefinitions, const ankerl::unordered_dense::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> &presentationLayerStyles, double linearScalingFactor, double squaredScalingFactor, double cubicScalingFactor, double angularScalingFactor, std::string angleUnits, const std::vector<geometry::IfcCurve> &localCurvesList, const std::vector<uint32_t> &localcurvesIndices, ankerl::unordered_dense::map<uint32_t, glm::dmat4> expressIDToPlacement)
       : _loader(loader), _relVoids(relVoids), _relNests(relNests), _relAggregates(relAggregates), _styledItems(styledItems), _relMaterials(relMaterials), _materialDefinitions(materialDefinitions), _presentationLayerStyles(presentationLayerStyles), _linearScalingFactor(linearScalingFactor), _squaredScalingFactor(squaredScalingFactor), _cubicScalingFactor(cubicScalingFactor), _angularScalingFactor(angularScalingFactor), _angleUnits(angleUnits), _localCurvesList(localCurvesList), _localcurvesIndices(localcurvesIndices), _expressIDToPlacement(expressIDToPlacement)
   {
   }

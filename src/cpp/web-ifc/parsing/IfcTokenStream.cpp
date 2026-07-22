@@ -73,23 +73,7 @@ namespace webifc::parsing
       }
       return "";
   }
-  
-  void IfcTokenStream::Forward(const size_t size)
-  {
-      _readPtr+=size;
-       while (_readPtr >= _cChunk->TokenSize()) 
-      {
-        if (_currentChunk == _chunks.size()-1)
-        {
-          _readPtr = _chunks.back().TokenSize();
-          return;
-        }
-        _readPtr -= _cChunk->TokenSize();
-        _currentChunk++;
-        _cChunk = &_chunks[_currentChunk];
-      }
-  }
-  
+    
   void IfcTokenStream::MoveTo(const size_t pos)
   {
      for (size_t i=_chunks.size()-1; i >=0; i--)
@@ -143,25 +127,6 @@ namespace webifc::parsing
   {
     if (_chunks.size()==0) return 0;
     return _chunks.back().TokenSize() + _chunks.back().GetTokenRef();
-  }
-  
-  void IfcTokenStream::Back()
-  {
-      if (_readPtr == 0 ) 
-      {
-        if (_currentChunk > 0) 
-        {
-          _cChunk = &_chunks[--_currentChunk];
-          _readPtr=_cChunk->TokenSize()-1;
-          return;
-        }
-      }
-      _readPtr--;
-  }
-  
-  bool IfcTokenStream::IsAtEnd()
-  {
-     return _currentChunk >= _chunks.size()-1 && _readPtr >= _chunks.back().TokenSize();
   }
   
   size_t IfcTokenStream::GetReadOffset() 
