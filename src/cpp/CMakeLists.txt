@@ -26,7 +26,7 @@ file(GLOB_RECURSE web-ifc-wasm wasm/*.cpp)
 
 # download the external projects and save their paths
 Message("Downloading FastFloat")
-FetchContent_Declare(fastfloat GIT_REPOSITORY "https://github.com/fastfloat/fast_float" GIT_TAG "2b2395f9ac836ffca6404424bcc252bff7aa80e4" SOURCE_SUBDIR "../")
+FetchContent_Declare(fastfloat GIT_REPOSITORY "https://github.com/fastfloat/fast_float" GIT_TAG "05087a303dad9c98768b33c829d398223a649bc6" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(fastfloat)
 FetchContent_GetProperties(fastfloat)
 
@@ -51,12 +51,12 @@ FetchContent_MakeAvailable(earcut)
 FetchContent_GetProperties(earcut)
 
 Message("Downloading CDT")
-FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "4d0c9026b8ec846fe544897e7111f8f9080d5f8a" SOURCE_SUBDIR "../")
+FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "5a1d702a01b24b33555913b90934fe673d51fc0f" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(cdt)
 FetchContent_GetProperties(cdt)
 
 Message("Downloading spdlog")
-FetchContent_Declare(spdlog GIT_REPOSITORY "https://github.com/gabime/spdlog" GIT_TAG "f355b3d58f7067eee1706ff3c801c2361011f3d5" SOURCE_SUBDIR "../")
+FetchContent_Declare(spdlog GIT_REPOSITORY "https://github.com/gabime/spdlog" GIT_TAG "79524ddd08a4ec981b7fea76afd08ee05f83755d" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(spdlog)
 FetchContent_GetProperties(spdlog)
 
@@ -65,6 +65,10 @@ FetchContent_Declare(stduuid GIT_REPOSITORY "https://github.com/mariusbancila/st
 FetchContent_MakeAvailable(stduuid)
 FetchContent_GetProperties(stduuid)
 
+Message("Downloading unordered_dense")
+FetchContent_Declare(unordered_dense GIT_REPOSITORY "https://github.com/martinus/unordered_dense" GIT_TAG "3234af2c03549bc85656bfd3a86993bf1cd8aef1" SOURCE_SUBDIR "../")
+FetchContent_MakeAvailable(unordered_dense)
+FetchContent_GetProperties(unordered_dense)
 
 Message("Downloads Finished")
 
@@ -77,6 +81,7 @@ function(PARAM_SETTER THE_EXECUTABLE)
 	target_include_directories(${THE_EXECUTABLE} PUBLIC $<BUILD_INTERFACE:${earcut_SOURCE_DIR}/include>)
 	target_include_directories(${THE_EXECUTABLE} PUBLIC $<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>)
 	target_include_directories(${THE_EXECUTABLE} PUBLIC $<BUILD_INTERFACE:${stduuid_SOURCE_DIR}/include>)
+	target_include_directories(${THE_EXECUTABLE} PUBLIC $<BUILD_INTERFACE:${unordered_dense_SOURCE_DIR}/include>)
 
 	if(NOT MSVC)
 		target_compile_options(${THE_EXECUTABLE} PUBLIC "-Wall")
@@ -103,11 +108,11 @@ if(EMSCRIPTEN)
 	# build parameters for web-ifc
 	add_executable(web-ifc ${web-ifc-source} ${web-ifc-wasm})
 	param_setter(web-ifc)
-	set_target_properties(web-ifc PROPERTIES LINK_FLAGS "${DEBUG_FLAG} --bind -flto --define-macro=REAL_T_IS_DOUBLE -s ALLOW_MEMORY_GROWTH=1 -s DYNAMIC_EXECUTION=0 -s MAXIMUM_MEMORY=4GB -sSTACK_SIZE=5MB -s EXPORT_NAME=WebIFCWasm -s MODULARIZE=1 -s ENVIRONMENT=web  -sASSERTIONS=1 -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPU32','HEAPF32']\"")
+	set_target_properties(web-ifc PROPERTIES LINK_FLAGS "${DEBUG_FLAG} --bind -msimd128 -flto --define-macro=REAL_T_IS_DOUBLE -s ALLOW_MEMORY_GROWTH=1 -s DYNAMIC_EXECUTION=0 -s MAXIMUM_MEMORY=4GB -sSTACK_SIZE=5MB -s EXPORT_NAME=WebIFCWasm -s MODULARIZE=1 -s ENVIRONMENT=web  -sASSERTIONS=1 -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPU32','HEAPF32']\"")
 
 	add_executable(web-ifc-node ${web-ifc-source} ${web-ifc-wasm})
 	param_setter(web-ifc-node)
-	set_target_properties(web-ifc-node PROPERTIES LINK_FLAGS "${DEBUG_FLAG} --bind -flto --define-macro=REAL_T_IS_DOUBLE -s ALLOW_MEMORY_GROWTH=1 -s DYNAMIC_EXECUTION=0 -s MAXIMUM_MEMORY=4GB -sSTACK_SIZE=5MB -s EXPORT_NAME=WebIFCWasm -s MODULARIZE=1 -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPU32','HEAPF32']\"")
+	set_target_properties(web-ifc-node PROPERTIES LINK_FLAGS "${DEBUG_FLAG} --bind -msimd128 -flto --define-macro=REAL_T_IS_DOUBLE -s ALLOW_MEMORY_GROWTH=1 -s DYNAMIC_EXECUTION=0 -s MAXIMUM_MEMORY=4GB -sSTACK_SIZE=5MB -s EXPORT_NAME=WebIFCWasm -s MODULARIZE=1 -s EXPORTED_RUNTIME_METHODS=\"['HEAPU8','HEAPU32','HEAPF32']\"")
 
 	# multi-treaded versions
 	add_executable(web-ifc-mt ${web-ifc-source} ${web-ifc-wasm})
@@ -190,6 +195,9 @@ if(NOT EMSCRIPTEN)
 		DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 	)
 	install(DIRECTORY ${stduuid_SOURCE_DIR}/include/
+		DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+	)
+	install(DIRECTORY ${unordered_dense_SOURCE_DIR}/include/
 		DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 	)
 
