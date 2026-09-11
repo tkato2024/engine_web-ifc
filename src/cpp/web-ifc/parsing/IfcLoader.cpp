@@ -15,7 +15,6 @@
 
 namespace webifc::parsing {
 
-  void p21encode(std::string_view input, std::ostringstream &output);
   std::string p21decode(std::string_view & str);
   std::string generateStringUUID();
   std::string expandIfcGuid(const std::string_view &guid);
@@ -187,7 +186,7 @@ namespace webifc::parsing {
               case IfcTokenType::STRING:
               {
                 output << "'";
-                p21encode(_tokenStream->ReadString(),output);
+                output << _tokenStream->ReadString();
                 output << "'";
                 break;
               }

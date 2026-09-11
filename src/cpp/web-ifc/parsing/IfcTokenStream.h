@@ -18,7 +18,7 @@ namespace webifc::parsing
   enum IfcTokenType : char
   {
     UNKNOWN = 0,
-    STRING,
+    STRING, // STEP encoded content, excluding outer quotes
     LABEL,
     ENUM,
     REAL,

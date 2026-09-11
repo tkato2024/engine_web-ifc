@@ -77,7 +77,8 @@ namespace webifc::parsing {
                 encodeCharacters(output,tmp);
                 inEncode=false;
                 tmp.clear();
-            } else if (c==39) {
+            }
+            if (c==39 || c==92) {
                 output << c << c;
                 continue;
             }
