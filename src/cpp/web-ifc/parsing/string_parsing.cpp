@@ -2,6 +2,7 @@
 // https://technical.buildingsmart.org/resources/ifcimplementationguidance/string-encoding/
 // http://www.steptools.com/stds/step/IS_final_p21e3.html
 
+#include "string_parsing.h"
 
 #include <vector>
 #include <string>

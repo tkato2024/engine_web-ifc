@@ -24,10 +24,10 @@
 #include "../web-ifc/geometry/operations/bim-geometry/utils.h"
 #include "../web-ifc/geometry/operations/bim-geometry/boolean.h"
 #include "../web-ifc/geometry/operations/bim-geometry/profile.h"
+#include "../web-ifc/parsing/string_parsing.h"
 
 namespace webifc::parsing
 {
-    void p21encode(std::string_view input, std::ostringstream &output);
     std::string p21decode(std::string_view &str);
 }
 
