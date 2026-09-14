@@ -462,6 +462,11 @@ namespace webifc::parsing {
       {
         RemoveLineReferences(expressID, lineIt->second.tapeOffset);
       }
+      const auto typeIt = _ifcTypeToExpressID.find(lineIt->second.ifcType);
+      if (typeIt != _ifcTypeToExpressID.end())
+      {
+        std::erase(typeIt->second, expressID);
+      }
       _lines.erase(expressID);
   }
   
