@@ -71,7 +71,7 @@ namespace webifc::parsing
       uint32_t GetCurrentLineExpressID() const;
       void RemoveLine(const uint32_t expressID);
       void PushDouble(double input);
-      void PushInt(int input);
+      void PushInt(int64_t input);
       std::string GenerateUUID() const;
       IfcLoader* Clone();
       uint32_t GetNextExpressID(uint32_t expressId) const;

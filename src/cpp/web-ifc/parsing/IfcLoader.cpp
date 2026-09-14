@@ -4,12 +4,11 @@
  
 #include <sstream>
 #include <string>
-#include <cmath>
 #include <algorithm>
-#include <format>
 #include <fast_float/fast_float.h>
 #include <spdlog/spdlog.h>
 #include "IfcLoader.h"
+#include "step_number.h"
 #include "../../version.h"
 #include "../schema/IfcSchemaManager.h" 
 
@@ -381,18 +380,15 @@ namespace webifc::parsing {
 
    void IfcLoader::PushDouble(double input)
    {             
-      std::string numberString = std::format("{}", input);
-      size_t eLoc = numberString.find_first_of('e');
-      if (eLoc != std::string::npos) numberString[eLoc]='E';
-      else if (std::floor(input) == input) numberString+='.';
+      std::string numberString = FormatStepReal(input);
       uint16_t length = numberString.size();
       Push<uint16_t>((uint16_t)length);
       Push((void*)numberString.c_str(), numberString.size());        
    }
 
-   void IfcLoader::PushInt(int input)
+   void IfcLoader::PushInt(int64_t input)
    {
-    std::string numberString = std::to_string(input);
+    std::string numberString = FormatStepInteger(input);
     uint16_t length = numberString.size();
     Push<uint16_t>((uint16_t)length);
     Push((void*)numberString.c_str(), numberString.size());             
