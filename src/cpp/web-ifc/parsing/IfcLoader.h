@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <istream>
 #include <set>
+#include <sstream>
 #include <cstdint>
 #include <string_view>
 
@@ -108,6 +109,7 @@ namespace webifc::parsing
       void CollectReferencesFromCurrentValue(std::unordered_set<uint32_t> &references) const;
       void AddLineReferences(uint32_t expressID, uint32_t tapeOffset) const;
       void RemoveLineReferences(uint32_t expressID, uint32_t tapeOffset) const;
+      void WriteLines(const std::vector<IfcLine> &lines, std::ostringstream &output, const std::function<void(char *, size_t)> &outputData, uint32_t &linesWritten) const;
       
 	};
 }
