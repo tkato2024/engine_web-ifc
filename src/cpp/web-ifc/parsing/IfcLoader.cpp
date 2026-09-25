@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include <algorithm>
+#include <stdexcept>
 #include <fast_float/fast_float.h>
 #include <spdlog/spdlog.h>
 #include "IfcLoader.h"
@@ -127,124 +128,173 @@ namespace webifc::parsing {
           currentLines =  new std::vector<IfcLine>();
           std::transform( _lines.begin(), _lines.end(), std::back_inserter( *currentLines ), [](auto &kv){ return kv.second;}  );
         }
-		if (orderLinesByExpressID) {
-			// Sort based on tapeOffset, which preserves the order by which the lines have been pushed
-			std::sort(currentLines->begin(), currentLines->end(), [](const IfcLine& a, const IfcLine& b) { return a.tapeOffset < b.tapeOffset; });
-		}
-        for(uint32_t i=0; i < currentLines->size();i++)
-        {
-       
-          IfcLine * line = &(*currentLines)[i];
-
-          if (line->ifcType == 0) continue;
-          _tokenStream->MoveTo(line->tapeOffset);
-          bool newLine = true;
-          bool insideSet = false;
-          IfcTokenType prev = IfcTokenType::EMPTY;
-          while (!_tokenStream->IsAtEnd())
-          {
-            IfcTokenType t = static_cast<IfcTokenType>(_tokenStream->Read<char>());
-
-            if (t != IfcTokenType::SET_END && t != IfcTokenType::LINE_END)
-            {
-              if (insideSet && prev != IfcTokenType::SET_BEGIN && prev != IfcTokenType::LABEL && prev != IfcTokenType::LINE_END)
-              {
-                output << ",";
-              }
-            }
-
-            if (t == IfcTokenType::LINE_END)
-            {
-              output << ";" << std::endl;
-              break;
-            }
-
-            switch (t)
-            {
-              case IfcTokenType::UNKNOWN:
-              {
-                output << "*";
-                break;
-              }
-              case IfcTokenType::EMPTY:
-              {
-                output << "$";
-                break;
-              }
-              case IfcTokenType::SET_BEGIN:
-              {
-                output << "(";
-                insideSet = true;
-                break;
-              }
-              case IfcTokenType::SET_END:
-              {
-                output << ")";
-                break;
-              }
-              case IfcTokenType::STRING:
-              {
-                output << "'";
-                output << _tokenStream->ReadString();
-                output << "'";
-                break;
-              }
-              case IfcTokenType::ENUM:
-              {
-                output << "." << _tokenStream->ReadString() << ".";
-                break;
-              }
-              case IfcTokenType::REF:
-              {
-                output << "#" << _tokenStream->Read<uint32_t>();
-                if (newLine) output << "=";
-                break;
-              }
-              case IfcTokenType::LABEL:
-              case IfcTokenType::REAL:
-              case IfcTokenType::INTEGER:
-              { 
-                output << _tokenStream->ReadString();
-                break;
-              }
-              default:
-                break;
-            }
-
-            if (t == IfcTokenType::LINE_END)
-            {
-              newLine = true;
-              insideSet = false;
-            }
-            else
-            {
-              newLine = false;
-            }
-            prev = t;
-          }
-        
-          linesWritten++;
-          if (linesWritten > _lineWriterBuffer ) 
-          {
-            std::string tmp = output.str();
-            outputData((char*)tmp.c_str(),tmp.size());
-            output.str("");
-            output.clear();
-            linesWritten=0;
-          }
+        if (orderLinesByExpressID) {
+          // Sort based on tapeOffset, which preserves the order by which the lines have been pushed
+          std::sort(currentLines->begin(), currentLines->end(), [](const IfcLine& a, const IfcLine& b) { return a.tapeOffset < b.tapeOffset; });
         }
+        WriteLines(*currentLines, output, outputData, linesWritten);
         if (z==0) output << "ENDSEC;"<<std::endl<<"DATA;"<<std::endl;
       }
       output << "ENDSEC;"<<std::endl<<"END-ISO-10303-21;";
       std::string tmp = output.str();
       outputData((char*)tmp.c_str(),tmp.size());
    }
-   
+
+   void IfcLoader::WriteLines(const std::vector<IfcLine> &lines, std::ostringstream &output, const std::function<void(char *, size_t)> &outputData, uint32_t &linesWritten) const
+   {
+      for(uint32_t i=0; i < lines.size();i++)
+      {
+        const IfcLine * line = &lines[i];
+
+        if (line->ifcType == 0) continue;
+        _tokenStream->MoveTo(line->tapeOffset);
+        bool newLine = true;
+        bool insideSet = false;
+        IfcTokenType prev = IfcTokenType::EMPTY;
+        while (!_tokenStream->IsAtEnd())
+        {
+          IfcTokenType t = static_cast<IfcTokenType>(_tokenStream->Read<char>());
+
+          if (t != IfcTokenType::SET_END && t != IfcTokenType::LINE_END)
+          {
+            if (insideSet && prev != IfcTokenType::SET_BEGIN && prev != IfcTokenType::LABEL && prev != IfcTokenType::LINE_END)
+            {
+              output << ",";
+            }
+          }
+
+          if (t == IfcTokenType::LINE_END)
+          {
+            output << ";" << std::endl;
+            break;
+          }
+
+          switch (t)
+          {
+            case IfcTokenType::UNKNOWN:
+            {
+              output << "*";
+              break;
+            }
+            case IfcTokenType::EMPTY:
+            {
+              output << "$";
+              break;
+            }
+            case IfcTokenType::SET_BEGIN:
+            {
+              output << "(";
+              insideSet = true;
+              break;
+            }
+            case IfcTokenType::SET_END:
+            {
+              output << ")";
+              break;
+            }
+            case IfcTokenType::STRING:
+            {
+              output << "'";
+              output << _tokenStream->ReadString();
+              output << "'";
+              break;
+            }
+            case IfcTokenType::ENUM:
+            {
+              output << "." << _tokenStream->ReadString() << ".";
+              break;
+            }
+            case IfcTokenType::REF:
+            {
+              output << "#" << _tokenStream->Read<uint32_t>();
+              if (newLine) output << "=";
+              break;
+            }
+            case IfcTokenType::LABEL:
+            case IfcTokenType::REAL:
+            case IfcTokenType::INTEGER:
+            {
+              output << _tokenStream->ReadString();
+              break;
+            }
+            default:
+              break;
+          }
+
+          if (t == IfcTokenType::LINE_END)
+          {
+            newLine = true;
+            insideSet = false;
+          }
+          else
+          {
+            newLine = false;
+          }
+          prev = t;
+        }
+
+        linesWritten++;
+        if (linesWritten > _lineWriterBuffer )
+        {
+          std::string tmp = output.str();
+          outputData((char*)tmp.c_str(),tmp.size());
+          output.str("");
+          output.clear();
+          linesWritten=0;
+        }
+      }
+   }
+
    void IfcLoader::SaveFile(std::ostream &outputData, bool orderLinesByExpressID) const
    { 
      SaveFile([&](char* src, size_t srcSize) {
           outputData.write(src,srcSize);
 		 },orderLinesByExpressID);
+   }
+
+   void IfcLoader::SaveFile(std::ostream &outputData, bool orderLinesByTapeOffset, const std::vector<uint32_t> *expressIDs) const
+   {
+     std::vector<IfcLine> dataLines;
+     if (expressIDs == nullptr)
+     {
+       std::transform(_lines.begin(), _lines.end(), std::back_inserter(dataLines), [](auto &kv) { return kv.second; });
+     }
+     else
+     {
+       std::unordered_set<uint32_t> seen;
+       for (uint32_t expressID : *expressIDs)
+       {
+         if (!seen.insert(expressID).second) continue;
+         auto it = _lines.find(expressID);
+         if (it == _lines.end())
+         {
+           throw std::invalid_argument("Express ID not found: " + std::to_string(expressID));
+         }
+         dataLines.push_back(it->second);
+       }
+     }
+
+     std::vector<IfcLine> headerLines(_headerLines);
+
+     if (orderLinesByTapeOffset)
+     {
+       // Sort based on tapeOffset, which preserves the order by which the lines have been pushed
+       auto byTapeOffset = [](const IfcLine &a, const IfcLine &b) { return a.tapeOffset < b.tapeOffset; };
+       std::sort(headerLines.begin(), headerLines.end(), byTapeOffset);
+       std::sort(dataLines.begin(), dataLines.end(), byTapeOffset);
+     }
+
+     std::ostringstream output;
+     output << "ISO-10303-21;" << std::endl << "HEADER;" << std::endl;
+
+     uint32_t linesWritten = 0;
+     auto write = [&](char *src, size_t srcSize) { outputData.write(src, srcSize); };
+     WriteLines(headerLines, output, write, linesWritten);
+     output << "ENDSEC;" << std::endl << "DATA;" << std::endl;
+     WriteLines(dataLines, output, write, linesWritten);
+     output << "ENDSEC;" << std::endl << "END-ISO-10303-21;";
+     std::string tmp = output.str();
+     outputData.write(tmp.c_str(), tmp.size());
    }
       
    bool IfcLoader::IsAtEnd() const
