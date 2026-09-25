@@ -37,6 +37,7 @@ namespace webifc::parsing
       void LoadFile(std::istream &requestData);
       void SaveFile(const std::function<void(char *, size_t)> &outputData, bool orderLinesByExpressID) const;
       void SaveFile(std::ostream &outputData, bool orderLinesByExpressID) const;
+      void SaveFile(std::ostream &outputData, bool orderLinesByTapeOffset, const std::vector<uint32_t> *expressIDs) const;
       const std::vector<uint32_t> GetExpressIDsWithType(const uint32_t type) const;
       uint32_t GetMaxExpressId() const;
       bool IsValidExpressID(const uint32_t expressID) const;
