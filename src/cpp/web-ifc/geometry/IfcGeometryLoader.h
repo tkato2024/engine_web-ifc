@@ -40,6 +40,8 @@ namespace webifc::geometry
     IfcCurve GetCurve(uint32_t expressID, uint8_t dimensions, bool edge = false) const;
     std::optional<IfcTrimmingSelect> ReadOptionalCurveMeasureSelect() const;
     bool TrimCurveByLength(const IfcCurve& curve, const std::optional<IfcTrimmingSelect>& startTrim, const std::optional<IfcTrimmingSelect>& endTrim, IfcCurve& trimmedCurve) const;
+    bool GetCompositeCurveParameters(uint32_t expressID, uint8_t dimensions, IfcCurve &curve, std::vector<double> &parameters) const;
+    bool GetCompositeSegmentParameterSpan(uint32_t curveID, uint8_t dimensions, size_t pointCount, double &span) const;
 
     IfcCurve GetCurveWithParameters(uint32_t expressID, uint8_t dimensions, std::optional<double> start, std::optional<double> end) const;
 
