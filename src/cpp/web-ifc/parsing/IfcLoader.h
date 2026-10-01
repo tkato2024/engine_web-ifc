@@ -32,7 +32,8 @@ namespace webifc::parsing
       IfcLoader(uint32_t tapeSize, uint64_t memoryLimit,uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager);  
       ~IfcLoader();
       const std::vector<uint32_t> GetHeaderLinesWithType(const uint32_t type) const;
-      const std::vector<InverseReference> &GetReferrers(const uint32_t expressID) const;
+      std::vector<InverseReference> GetReferrers(const uint32_t expressID) const;
+      std::vector<uint32_t> GetReferrers(const uint32_t expressID, const uint32_t sourceType, const uint16_t argumentIndex) const;
       void LoadFile(const std::function<uint32_t(char *, size_t, size_t)> &requestData);
       void LoadFile(std::istream &requestData);
       void SaveFile(const std::function<void(char *, size_t)> &outputData, bool orderLinesByExpressID) const;
@@ -93,7 +94,7 @@ namespace webifc::parsing
         uint32_t expressID;
         uint16_t argumentIndex;
       };
-      IfcLoader(uint32_t maxExpressId, uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager, IfcTokenStream * tokenStream, ankerl::unordered_dense::map<uint32_t, IfcLine> &lines, std::vector<IfcLine> &headerLines,std::unordered_map<uint32_t, std::vector<uint32_t>> &ifcTypeToExpressID, std::unordered_map<uint32_t, std::vector<InverseReference>> &referrers, bool referrersBuilt);
+      IfcLoader(uint32_t maxExpressId, uint32_t lineWriterBuffer, const schema::IfcSchemaManager &schemaManager, IfcTokenStream * tokenStream, ankerl::unordered_dense::map<uint32_t, IfcLine> &lines, std::vector<IfcLine> &headerLines,std::unordered_map<uint32_t, std::vector<uint32_t>> &ifcTypeToExpressID);
       uint32_t _maxExpressId;
       const uint32_t _lineWriterBuffer;
       const schema::IfcSchemaManager &_schemaManager;
@@ -101,15 +102,11 @@ namespace webifc::parsing
       ankerl::unordered_dense::map<uint32_t, IfcLine> _lines;
       std::vector<IfcLine> _headerLines;
       std::unordered_map<uint32_t, std::vector<uint32_t>> _ifcTypeToExpressID;
-      mutable std::unordered_map<uint32_t, std::vector<InverseReference>> _referrers;
-      mutable bool _referrersBuilt = false;
+      mutable std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>> _referrerIndexes;
       void ParseLines();
-      void BuildReferrers() const;
       void ArgumentOffset(const uint32_t argumentIndex) const;      
       std::vector<ForwardReference> CollectLineReferences(uint32_t tapeOffset) const;
       void CollectReferencesFromCurrentValue(std::unordered_set<uint32_t> &references) const;
-      void AddLineReferences(uint32_t expressID, uint32_t tapeOffset) const;
-      void RemoveLineReferences(uint32_t expressID, uint32_t tapeOffset) const;
       void WriteLines(const std::vector<IfcLine> &lines, std::ostringstream &output, const std::function<void(char *, size_t)> &outputData, uint32_t &linesWritten) const;
       
 	};
