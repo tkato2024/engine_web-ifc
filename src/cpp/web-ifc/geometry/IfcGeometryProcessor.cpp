@@ -934,7 +934,7 @@ namespace webifc::geometry
                 glm::dvec3 fixedReference = _geometryLoader.GetDirection(fixedReferenceID);
 
                 // Check for valid profile and directrix
-                if (profile.curve.points.empty() || directrix.points.empty())
+                if (profile.curve.points.empty() || directrix.points.size() < 2)
                 {
                     spdlog::error("[GetMesh({})] Invalid profile or directrix for IFCFIXEDREFERENCESWEPTAREASOLID", expressID);
                     return mesh;
