@@ -224,6 +224,7 @@ for (var i = 0; i < files.length; i++) {
       }
       else if (type.isSelect)
       {
+          typeList.add(type.name);
           let selectOutput: string = `export type ${type.name} = `;
           let first = true;
           type.values.forEach(refType => {
@@ -245,6 +246,7 @@ for (var i = 0; i < files.length; i++) {
       }
       else if (type.isEnum)
       {
+          typeList.add(type.name);
           tsSchema.push(`export class ${type.name} {` + type.values.map((v) => `static ${v} : any =  { type:3, value:'${v}'}; `).join('') +'}');
       }
       else
