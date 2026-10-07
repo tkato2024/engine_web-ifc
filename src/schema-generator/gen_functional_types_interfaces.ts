@@ -1,4 +1,12 @@
 
+export type ExpressBaseType = "INTEGER" | "REAL" | "NUMBER" | "STRING" | "BOOLEAN" | "LOGICAL" | "BINARY" | "ENUM" | "SELECT" | "ENTITY" | "UNKNOWN";
+export type AggregateKind = "LIST" | "SET" | "ARRAY" | "BAG";
+
+export interface ExpressType {
+    typeName: string;
+    aggregates: AggregateKind[];
+}
+
 export interface Type {
     name: string;
     typeName : string;
@@ -7,6 +15,7 @@ export interface Type {
     isEnum: boolean;
     isSelect: boolean;
     values: string[];
+    expressType: ExpressType;
 }
 
 export interface Prop {
@@ -17,6 +26,7 @@ export interface Prop {
     optional: boolean;
     set: boolean;
     dimensions: number;
+    expressType: ExpressType;
 }
 
 export interface InverseProp {
