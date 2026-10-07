@@ -1,4 +1,4 @@
-import {Entity, Type, Prop} from "./gen_functional_types_interfaces";
+import {Entity, Type, Prop, ExpressType, ExpressBaseType, AggregateKind} from "./gen_functional_types_interfaces";
 
 export function generateInitialiser(type: Type, initialisersDone: Set<string>,buffer: Array<string>, crcTable:any,types: Type[],schemaName:string,schemaNo: number) 
 {
@@ -246,6 +246,40 @@ export function expTypeToTypeNum(expTypeName:string) : number
     return 5;
 }
 
+export function parseExpressType(declaration: string): ExpressType
+{
+    declaration = declaration.trim().replace(/^OPTIONAL\s+/, "");
+    if (/^ENUMERATION\b/.test(declaration)) return {typeName: "ENUM", aggregates: []};
+    if (/^SELECT\b/.test(declaration)) return {typeName: "SELECT", aggregates: []};
+    let aggregates: AggregateKind[] = [];
+    let aggregate;
+    while ((aggregate = /^(LIST|SET|ARRAY|BAG)\s*(?:\[[^\]]*\])?\s+OF\s+(?:(?:OPTIONAL|UNIQUE)\s+)*/.exec(declaration)))
+    {
+        aggregates.push(aggregate[1] as AggregateKind);
+        declaration = declaration.substring(aggregate[0].length);
+    }
+    return {typeName: /^[A-Za-z][A-Za-z0-9_]*/.exec(declaration)?.[0] ?? "UNKNOWN", aggregates};
+}
+
+export function resolveExpressType(declaration: ExpressType, types: Type[], entities: Entity[]): {baseType: ExpressBaseType, aggregates: AggregateKind[]}
+{
+    let typeName = declaration.typeName;
+    let aggregates = [...declaration.aggregates];
+    let visited = new Set<string>();
+    while (!visited.has(typeName))
+    {
+        visited.add(typeName);
+        if (["INTEGER", "REAL", "NUMBER", "STRING", "BOOLEAN", "LOGICAL", "BINARY", "ENUM", "SELECT"].includes(typeName))
+            return {baseType: typeName as ExpressBaseType, aggregates};
+        if (entities.some(entity => entity.name == typeName)) return {baseType: "ENTITY", aggregates};
+        let type = types.find(type => type.name == typeName);
+        if (!type) break;
+        aggregates.push(...type.expressType.aggregates);
+        typeName = type.expressType.typeName;
+    }
+    return {baseType: "UNKNOWN", aggregates};
+}
+
 export function parseInverse(line:string,entity:Entity) 
 {
     let split = line.split(" ");
@@ -399,7 +433,8 @@ export function parseElements(data:string)
                 isList,
                 isEnum,
                 isSelect,
-                values
+                values,
+                expressType: parseExpressType(line.substring(line.indexOf("=") + 1))
             }
         }
         else if (line.indexOf("END_TYPE") == 0)
@@ -450,7 +485,8 @@ export function parseElements(data:string)
                 primitive: tsType !== type,
                 optional,
                 set,
-                dimensions
+                dimensions,
+                expressType: parseExpressType(line.substring(line.indexOf(" : ") + 3))
             })
         }  
         else if (entity && readIfcDerived && hasColon) parseDerived(line,entity);

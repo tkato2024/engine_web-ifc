@@ -1,5 +1,5 @@
-import {Entity} from "./gen_functional_types_interfaces";
-import {generatePropAssignment,generateTapeAssignment,generateInitialiser,findSubClasses,sortEntities,generateClass,crc32,makeCRCTable, parseElements, walkParents} from "./gen_functional_types_helpers"
+import {Entity, ExpressType, Type} from "./gen_functional_types_interfaces";
+import {generatePropAssignment,generateTapeAssignment,generateInitialiser,findSubClasses,sortEntities,generateClass,crc32,makeCRCTable, parseElements, walkParents, resolveExpressType} from "./gen_functional_types_helpers"
 
 import schemaAliases from "./schema_aliases";
 
@@ -20,6 +20,34 @@ let cppInverseArrays: Array<string> = [];
 let cppInheritedTypes: Array<string> = [];
 let cppInverseProps: Array<string> = [];
 let chSchema: Array<string> = [];
+let cppTypeMetadata: string[] = [
+  "#pragma once",
+  "// Generated EXPRESS type metadata - see src/schema-generator/gen_functional_types.ts",
+  "#include <array>",
+  "#include <cstdint>",
+  "#include <span>",
+  '#include "ifc-schema.h"',
+  "namespace webifc::schema {",
+  "enum class ExpressBaseType { UNKNOWN, INTEGER, REAL, NUMBER, STRING, BOOLEAN, LOGICAL, BINARY, ENUM, SELECT, ENTITY };",
+  "enum class AggregateKind { LIST, SET, ARRAY, BAG };",
+  "struct ExpressTypeMetadata { ExpressBaseType base_type; std::span<const AggregateKind> aggregates; };",
+  "struct NamedTypeMetadata { uint32_t type_code; ExpressTypeMetadata type; };",
+  "struct EntityTypeMetadata { uint32_t type_code; std::span<const ExpressTypeMetadata> attributes; };",
+  "struct SchemaTypeMetadata { IFC_SCHEMA schema; std::span<const NamedTypeMetadata> types; std::span<const EntityTypeMetadata> entities; };"
+];
+let cppTypeMetadataSchemas: string[] = [];
+
+function formatTypeMetadata(declaration: ExpressType, types: Type[], entities: Entity[], aggregates: Map<string, string>, schemaName: string): string
+{
+  let resolved = resolveExpressType(declaration, types, entities);
+  let aggregateSpan = "std::span<const AggregateKind>{}";
+  if (resolved.aggregates.length > 0) {
+    let key = resolved.aggregates.join("_");
+    if (!aggregates.has(key)) aggregates.set(key, `kAggregates_${schemaName}_${key}`);
+    aggregateSpan = aggregates.get(key)!;
+  }
+  return `{ExpressBaseType::${resolved.baseType}, ${aggregateSpan}}`;
+}
 
 let completeifcElementList = new Set<string>();
 
@@ -130,6 +158,25 @@ for (var i = 0; i < files.length; i++) {
   
   //now work out the children
   entities = findSubClasses(entities);
+
+  let aggregates = new Map<string, string>();
+  let namedTypeEntries = types.map(type => `{${crc32(type.name.toUpperCase(), crcTable)}, ${formatTypeMetadata(type.expressType, types, entities, aggregates, schemaNameClean)}}`);
+  let attributeArrays: string[] = [];
+  let entityTypeEntries: string[] = [];
+  for (let entity of entities) {
+    let arrayName = `kAttributeTypes_${schemaNameClean}_${entity.name}`;
+    let entries = entity.derivedProps.map(prop => formatTypeMetadata(prop.expressType, types, entities, aggregates, schemaNameClean));
+    attributeArrays.push(`inline constexpr std::array<ExpressTypeMetadata, ${entries.length}> ${arrayName} = {{${entries.join(", ")}}};`);
+    entityTypeEntries.push(`{${crc32(entity.name.toUpperCase(), crcTable)}, ${arrayName}}`);
+  }
+  for (let [key, name] of aggregates) {
+    let kinds = key.split("_");
+    cppTypeMetadata.push(`inline constexpr std::array<AggregateKind, ${kinds.length}> ${name} = {${kinds.map(kind => `AggregateKind::${kind}`).join(", ")}};`);
+  }
+  cppTypeMetadata.push(...attributeArrays);
+  cppTypeMetadata.push(`inline constexpr std::array<NamedTypeMetadata, ${types.length}> kNamedTypes_${schemaNameClean} = {{${namedTypeEntries.join(",\n")}}};`);
+  cppTypeMetadata.push(`inline constexpr std::array<EntityTypeMetadata, ${entities.length}> kEntityTypes_${schemaNameClean} = {{${entityTypeEntries.join(",\n")}}};`);
+  cppTypeMetadataSchemas.push(`{${schemaNameClean}, kNamedTypes_${schemaNameClean}, kEntityTypes_${schemaNameClean}}`);
   
   for (var x=0; x < entities.length; x++) 
   {
@@ -484,6 +531,40 @@ fs.writeFileSync("../cpp/web-ifc/schema/ifc-schema.h", chSchema.join("\n"));
 fs.writeFileSync("../cpp/web-ifc/schema/schema-functions.cpp", cppSchema.join("\n")); 
 fs.writeFileSync("../cpp/web-ifc/schema/schema-names.h", [ ...cppPropertyNames, ...cppPropertyTypes, ...cppPropertyCounts].join("\n")); 
 fs.writeFileSync("../cpp/web-ifc/schema/schema-inverses.h", cppInverseHeader.join("\n"));
+cppTypeMetadata.push(`inline constexpr std::array<SchemaTypeMetadata, ${cppTypeMetadataSchemas.length}> kSchemaTypeMetadata = {{${cppTypeMetadataSchemas.join(",\n")}}};`);
+cppTypeMetadata.push(`// Unknown types or schemas return UNKNOWN. Aggregate kinds run from outermost to innermost.
+// Returned spans refer to static generated data and remain valid for the program lifetime.
+// ponytail: linear table lookup; generate dispatch if bulk writing makes lookup a bottleneck.
+inline ExpressTypeMetadata getTypeMetadata(IFC_SCHEMA schema, uint32_t typeCode) {
+  for (const auto& data : kSchemaTypeMetadata) {
+    if (data.schema != schema) continue;
+    for (const auto& type : data.types) {
+      if (type.type_code == typeCode) return type.type;
+    }
+    for (const auto& entity : data.entities) {
+      if (entity.type_code == typeCode) return {ExpressBaseType::ENTITY, {}};
+    }
+    break;
+  }
+  return {ExpressBaseType::UNKNOWN, {}};
+}
+// Attribute positions include inherited and redeclared derived attributes.
+// Unknown entities, schemas or out-of-range positions return UNKNOWN; spans have the lifetime above.
+inline ExpressTypeMetadata getPropertyTypeMetadata(IFC_SCHEMA schema, uint32_t typeCode, uint32_t prop) {
+  for (const auto& data : kSchemaTypeMetadata) {
+    if (data.schema != schema) continue;
+    for (const auto& entity : data.entities) {
+      if (entity.type_code == typeCode) {
+        if (prop < entity.attributes.size()) return entity.attributes[prop];
+        break;
+      }
+    }
+    break;
+  }
+  return {ExpressBaseType::UNKNOWN, {}};
+}`);
+cppTypeMetadata.push("}");
+fs.writeFileSync("../cpp/web-ifc/schema/schema-type-metadata.h", cppTypeMetadata.join("\n"));
 fs.writeFileSync("../ts/ifc-schema.ts", tsSchema.join("\n")); 
 
 console.log(`...Done!`);
