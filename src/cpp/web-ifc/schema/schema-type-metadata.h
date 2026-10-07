@@ -5795,4 +5795,35 @@ inline constexpr std::array<EntityTypeMetadata, 876> kEntityTypes_IFC4X3 = {{{36
 inline constexpr std::array<SchemaTypeMetadata, 3> kSchemaTypeMetadata = {{{IFC2X3, kNamedTypes_IFC2X3, kEntityTypes_IFC2X3},
 {IFC4, kNamedTypes_IFC4, kEntityTypes_IFC4},
 {IFC4X3, kNamedTypes_IFC4X3, kEntityTypes_IFC4X3}}};
+// Unknown types or schemas return UNKNOWN. Aggregate kinds run from outermost to innermost.
+// Returned spans refer to static generated data and remain valid for the program lifetime.
+// ponytail: linear table lookup; generate dispatch if bulk writing makes lookup a bottleneck.
+inline ExpressTypeMetadata getTypeMetadata(IFC_SCHEMA schema, uint32_t typeCode) {
+  for (const auto& data : kSchemaTypeMetadata) {
+    if (data.schema != schema) continue;
+    for (const auto& type : data.types) {
+      if (type.type_code == typeCode) return type.type;
+    }
+    for (const auto& entity : data.entities) {
+      if (entity.type_code == typeCode) return {ExpressBaseType::ENTITY, {}};
+    }
+    break;
+  }
+  return {ExpressBaseType::UNKNOWN, {}};
+}
+// Attribute positions include inherited and redeclared derived attributes.
+// Unknown entities, schemas or out-of-range positions return UNKNOWN; spans have the lifetime above.
+inline ExpressTypeMetadata getPropertyTypeMetadata(IFC_SCHEMA schema, uint32_t typeCode, uint32_t prop) {
+  for (const auto& data : kSchemaTypeMetadata) {
+    if (data.schema != schema) continue;
+    for (const auto& entity : data.entities) {
+      if (entity.type_code == typeCode) {
+        if (prop < entity.attributes.size()) return entity.attributes[prop];
+        break;
+      }
+    }
+    break;
+  }
+  return {ExpressBaseType::UNKNOWN, {}};
+}
 }
