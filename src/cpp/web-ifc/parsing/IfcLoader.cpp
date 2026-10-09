@@ -440,7 +440,13 @@ namespace webifc::parsing {
    
    void IfcLoader::MoveToHeaderLineArgument(const uint32_t lineID, const uint32_t argumentIndex) const
    { 
-     _tokenStream->MoveTo(_headerLines[lineID].tapeOffset);
+     _tokenStream->MoveTo(_headerLines.at(lineID).tapeOffset);
+     if (IsAtEnd() || GetTokenType() != IfcTokenType::LABEL)
+       throw std::invalid_argument("Malformed IFC header line");
+     _tokenStream->ReadString();
+     if (IsAtEnd() || GetTokenType() != IfcTokenType::SET_BEGIN)
+       throw std::invalid_argument("Malformed IFC header line");
+     StepBack();
    	 ArgumentOffset(argumentIndex);	
    }
    

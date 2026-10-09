@@ -19,5 +19,7 @@ namespace webifc::parsing
                  const std::vector<ArgumentValue> &args);
   void SetArguments(IfcLoader &loader, uint32_t expressID,
                     const std::map<uint32_t, ArgumentValue> &args);
+  void SetHeaderArguments(IfcLoader &loader, uint32_t type,
+                          const std::map<uint32_t, ArgumentValue> &args);
   void DeleteLine(IfcLoader &loader, uint32_t expressID);
 }
