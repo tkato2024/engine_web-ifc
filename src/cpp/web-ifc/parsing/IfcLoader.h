@@ -71,6 +71,7 @@ namespace webifc::parsing
       uint64_t GetTotalSize() const;
       void UpdateLineTape(const uint32_t expressID, const uint32_t type, const uint32_t start);
       void AddHeaderLineTape(const uint32_t type, const uint32_t start);
+      void UpdateHeaderLineTape(const uint32_t lineID, const uint32_t start);
       uint32_t GetCurrentLineExpressID() const;
       void RemoveLine(const uint32_t expressID);
       void PushDouble(double input);
@@ -104,6 +105,7 @@ namespace webifc::parsing
       std::unordered_map<uint32_t, std::vector<uint32_t>> _ifcTypeToExpressID;
       mutable std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>> _referrerIndexes;
       void ParseLines();
+      std::vector<IfcLine> OrderedHeaderLines() const;
       void ArgumentOffset(const uint32_t argumentIndex) const;      
       std::vector<ForwardReference> CollectLineReferences(uint32_t tapeOffset) const;
       void CollectReferencesFromCurrentValue(std::unordered_set<uint32_t> &references) const;
