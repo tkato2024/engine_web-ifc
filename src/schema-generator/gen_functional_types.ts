@@ -1,5 +1,5 @@
 import {Entity, ExpressType, Type} from "./gen_functional_types_interfaces";
-import {generatePropAssignment,generateTapeAssignment,generateInitialiser,findSubClasses,sortEntities,generateClass,crc32,makeCRCTable, parseElements, walkParents, resolveExpressType} from "./gen_functional_types_helpers"
+import {generatePropAssignment,generateTapeAssignment,generateInitialiser,findSubClasses,sortEntities,generateClass,crc32,makeCRCTable, parseElements, walkParents, resolveExpressType, resolveSelectCandidates} from "./gen_functional_types_helpers"
 
 import schemaAliases from "./schema_aliases";
 
@@ -30,12 +30,16 @@ let cppTypeMetadata: string[] = [
   "namespace webifc::schema {",
   "enum class ExpressBaseType { UNKNOWN, INTEGER, REAL, NUMBER, STRING, BOOLEAN, LOGICAL, BINARY, ENUM, SELECT, ENTITY };",
   "enum class AggregateKind { LIST, SET, ARRAY, BAG };",
-  "struct ExpressTypeMetadata { ExpressBaseType base_type; std::span<const AggregateKind> aggregates; };",
+  "// resolved_type_code identifies the terminal ENTITY or SELECT, including through aliases and aggregates; otherwise 0.",
+  "struct ExpressTypeMetadata { ExpressBaseType base_type; std::span<const AggregateKind> aggregates; uint32_t resolved_type_code = 0; };",
   "struct NamedTypeMetadata { uint32_t type_code; ExpressTypeMetadata type; };",
   "struct EntityTypeMetadata { uint32_t type_code; std::span<const ExpressTypeMetadata> attributes; };",
-  "struct SchemaTypeMetadata { IFC_SCHEMA schema; std::span<const NamedTypeMetadata> types; std::span<const EntityTypeMetadata> entities; };"
+  "struct SchemaTypeMetadata { IFC_SCHEMA schema; std::span<const NamedTypeMetadata> types; std::span<const EntityTypeMetadata> entities; };",
+  "struct SelectTypeMetadata { uint32_t type_code; std::span<const uint32_t> candidates; };",
+  "struct SchemaSelectMetadata { IFC_SCHEMA schema; std::span<const SelectTypeMetadata> selects; };"
 ];
 let cppTypeMetadataSchemas: string[] = [];
+let cppSelectMetadataSchemas: string[] = [];
 
 function formatTypeMetadata(declaration: ExpressType, types: Type[], entities: Entity[], aggregates: Map<string, string>, schemaName: string): string
 {
@@ -46,7 +50,8 @@ function formatTypeMetadata(declaration: ExpressType, types: Type[], entities: E
     if (!aggregates.has(key)) aggregates.set(key, `kAggregates_${schemaName}_${key}`);
     aggregateSpan = aggregates.get(key)!;
   }
-  return `{ExpressBaseType::${resolved.baseType}, ${aggregateSpan}}`;
+  let resolvedCode = resolved.resolvedTypeName ? `, ${crc32(resolved.resolvedTypeName.toUpperCase(), crcTable)}` : "";
+  return `{ExpressBaseType::${resolved.baseType}, ${aggregateSpan}${resolvedCode}}`;
 }
 
 let completeifcElementList = new Set<string>();
@@ -160,7 +165,7 @@ for (var i = 0; i < files.length; i++) {
   entities = findSubClasses(entities);
 
   let aggregates = new Map<string, string>();
-  let namedTypeEntries = types.map(type => `{${crc32(type.name.toUpperCase(), crcTable)}, ${formatTypeMetadata(type.expressType, types, entities, aggregates, schemaNameClean)}}`);
+  let namedTypeEntries = types.map(type => `{${crc32(type.name.toUpperCase(), crcTable)}, ${formatTypeMetadata({typeName: type.name, aggregates: []}, types, entities, aggregates, schemaNameClean)}}`);
   let attributeArrays: string[] = [];
   let entityTypeEntries: string[] = [];
   for (let entity of entities) {
@@ -177,6 +182,16 @@ for (var i = 0; i < files.length; i++) {
   cppTypeMetadata.push(`inline constexpr std::array<NamedTypeMetadata, ${types.length}> kNamedTypes_${schemaNameClean} = {{${namedTypeEntries.join(",\n")}}};`);
   cppTypeMetadata.push(`inline constexpr std::array<EntityTypeMetadata, ${entities.length}> kEntityTypes_${schemaNameClean} = {{${entityTypeEntries.join(",\n")}}};`);
   cppTypeMetadataSchemas.push(`{${schemaNameClean}, kNamedTypes_${schemaNameClean}, kEntityTypes_${schemaNameClean}}`);
+  let selectTypeEntries: string[] = [];
+  for (let type of types) {
+    if (!type.isSelect) continue;
+    let candidates = resolveSelectCandidates(type.name, types, entities);
+    let arrayName = `kSelectCandidates_${schemaNameClean}_${type.name}`;
+    cppTypeMetadata.push(`inline constexpr std::array<uint32_t, ${candidates.length}> ${arrayName} = {${candidates.map(name => crc32(name.toUpperCase(), crcTable)).join(", ")}};`);
+    selectTypeEntries.push(`{${crc32(type.name.toUpperCase(), crcTable)}, ${arrayName}}`);
+  }
+  cppTypeMetadata.push(`inline constexpr std::array<SelectTypeMetadata, ${selectTypeEntries.length}> kSelectTypes_${schemaNameClean} = {{${selectTypeEntries.join(",\n")}}};`);
+  cppSelectMetadataSchemas.push(`{${schemaNameClean}, kSelectTypes_${schemaNameClean}}`);
   
   for (var x=0; x < entities.length; x++) 
   {
@@ -532,6 +547,21 @@ fs.writeFileSync("../cpp/web-ifc/schema/schema-functions.cpp", cppSchema.join("\
 fs.writeFileSync("../cpp/web-ifc/schema/schema-names.h", [ ...cppPropertyNames, ...cppPropertyTypes, ...cppPropertyCounts].join("\n")); 
 fs.writeFileSync("../cpp/web-ifc/schema/schema-inverses.h", cppInverseHeader.join("\n"));
 cppTypeMetadata.push(`inline constexpr std::array<SchemaTypeMetadata, ${cppTypeMetadataSchemas.length}> kSchemaTypeMetadata = {{${cppTypeMetadataSchemas.join(",\n")}}};`);
+cppTypeMetadata.push(`inline constexpr std::array<SchemaSelectMetadata, ${cppSelectMetadataSchemas.length}> kSchemaSelectMetadata = {{${cppSelectMetadataSchemas.join(",\n")}}};`);
+cppTypeMetadata.push(`// Nested SELECTs are flattened; named types and entity candidates retain their type codes.
+// Entity subtypes are available separately through getInheritedTypes.
+// Unknown schemas, unknown types and non-SELECT types return an empty span.
+// Returned spans refer to static generated data and remain valid for the program lifetime.
+inline std::span<const uint32_t> getSelectCandidates(IFC_SCHEMA schema, uint32_t typeCode) {
+  for (const auto& data : kSchemaSelectMetadata) {
+    if (data.schema != schema) continue;
+    for (const auto& type : data.selects) {
+      if (type.type_code == typeCode) return type.candidates;
+    }
+    break;
+  }
+  return {};
+}`);
 cppTypeMetadata.push(`// Unknown types or schemas return UNKNOWN. Aggregate kinds run from outermost to innermost.
 // Returned spans refer to static generated data and remain valid for the program lifetime.
 // ponytail: linear table lookup; generate dispatch if bulk writing makes lookup a bottleneck.
@@ -542,7 +572,7 @@ inline ExpressTypeMetadata getTypeMetadata(IFC_SCHEMA schema, uint32_t typeCode)
       if (type.type_code == typeCode) return type.type;
     }
     for (const auto& entity : data.entities) {
-      if (entity.type_code == typeCode) return {ExpressBaseType::ENTITY, {}};
+      if (entity.type_code == typeCode) return {ExpressBaseType::ENTITY, {}, entity.type_code};
     }
     break;
   }

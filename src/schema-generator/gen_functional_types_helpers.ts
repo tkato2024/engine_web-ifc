@@ -261,7 +261,7 @@ export function parseExpressType(declaration: string): ExpressType
     return {typeName: /^[A-Za-z][A-Za-z0-9_]*/.exec(declaration)?.[0] ?? "UNKNOWN", aggregates};
 }
 
-export function resolveExpressType(declaration: ExpressType, types: Type[], entities: Entity[]): {baseType: ExpressBaseType, aggregates: AggregateKind[]}
+export function resolveExpressType(declaration: ExpressType, types: Type[], entities: Entity[]): {baseType: ExpressBaseType, aggregates: AggregateKind[], resolvedTypeName?: string}
 {
     let typeName = declaration.typeName;
     let aggregates = [...declaration.aggregates];
@@ -271,13 +271,37 @@ export function resolveExpressType(declaration: ExpressType, types: Type[], enti
         visited.add(typeName);
         if (["INTEGER", "REAL", "NUMBER", "STRING", "BOOLEAN", "LOGICAL", "BINARY", "ENUM", "SELECT"].includes(typeName))
             return {baseType: typeName as ExpressBaseType, aggregates};
-        if (entities.some(entity => entity.name == typeName)) return {baseType: "ENTITY", aggregates};
+        if (entities.some(entity => entity.name == typeName)) return {baseType: "ENTITY", aggregates, resolvedTypeName: typeName};
         let type = types.find(type => type.name == typeName);
         if (!type) break;
         aggregates.push(...type.expressType.aggregates);
+        if (type.isSelect) return {baseType: "SELECT", aggregates, resolvedTypeName: type.name};
         typeName = type.expressType.typeName;
     }
     return {baseType: "UNKNOWN", aggregates};
+}
+
+export function resolveSelectCandidates(typeName: string, types: Type[], entities: Entity[]): string[]
+{
+    if (!types.find(type => type.name == typeName)?.isSelect) return [];
+    let candidates = new Set<string>();
+    let visiting = new Set<string>();
+    function visit(name: string)
+    {
+        let type = types.find(type => type.name == name);
+        if (type?.isSelect) {
+            if (visiting.has(name)) throw new Error(`Cyclic SELECT candidate: ${name}`);
+            visiting.add(name);
+            for (let candidate of type.values) visit(candidate);
+            visiting.delete(name);
+        } else {
+            if (!type && !entities.some(entity => entity.name == name))
+                throw new Error(`Unresolved SELECT candidate: ${name}`);
+            candidates.add(name);
+        }
+    }
+    visit(typeName);
+    return [...candidates];
 }
 
 export function parseInverse(line:string,entity:Entity) 
