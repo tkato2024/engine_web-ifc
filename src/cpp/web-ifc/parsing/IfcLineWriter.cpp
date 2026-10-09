@@ -148,6 +148,23 @@ namespace webifc::parsing
           value.value);
     }
 
+    // Header fields are strings, lists of strings, or $.
+    void validateHeaderArgument(const ArgumentValue &value)
+    {
+      if (std::holds_alternative<ArgumentValue::String>(value.value) ||
+          std::holds_alternative<ArgumentValue::Null>(value.value))
+      {
+        return;
+      }
+      const auto *list = std::get_if<ArgumentValue::List>(&value.value);
+      if (!list || !std::all_of(list->begin(), list->end(), [](const auto &item) {
+            return std::holds_alternative<ArgumentValue::String>(item.value);
+          }))
+      {
+        throw std::invalid_argument("Header argument must be a string, a list of strings, or null");
+      }
+    }
+
     void appendArgument(std::vector<uint8_t> &out, const ArgumentValue &value)
     {
       std::visit(
@@ -318,6 +335,28 @@ namespace webifc::parsing
       loader.UpdateLineTape(expressID, type, static_cast<uint32_t>(start));
     }
 
+    uint32_t headerArgumentCount(uint32_t type)
+    {
+      if (type == schema::FILE_DESCRIPTION) return 2;
+      if (type == schema::FILE_NAME) return 7;
+      if (type == schema::FILE_SCHEMA) return 1;
+      throw std::invalid_argument("Unsupported header type");
+    }
+
+    // Closes a header line, writes it to the tape and returns its start offset.
+    uint32_t pushHeaderLine(IfcLoader &loader, std::vector<uint8_t> &line)
+    {
+      appendToken(line, IfcTokenType::SET_END);
+      appendToken(line, IfcTokenType::LINE_END);
+
+      const uint64_t start = loader.GetTotalSize();
+      if (start > std::numeric_limits<uint32_t>::max() ||
+          static_cast<uint64_t>(line.size()) > std::numeric_limits<uint32_t>::max() - start)
+        throw std::overflow_error("IFC tape exceeds uint32_t offsets");
+      loader.Push(line.data(), line.size());
+      return static_cast<uint32_t>(start);
+    }
+
     std::vector<uint8_t> buildLine(IfcLoader &loader, uint32_t expressID,
                                    uint32_t type,
                                    const std::vector<ArgumentValue> &args)
@@ -425,6 +464,75 @@ namespace webifc::parsing
     }
 
     pushLine(loader, expressID, type, line);
+  }
+
+  void SetHeaderArguments(IfcLoader &loader, uint32_t type,
+                          const std::map<uint32_t, ArgumentValue> &args)
+  {
+    if (type != schema::FILE_NAME && type != schema::FILE_DESCRIPTION)
+      throw std::invalid_argument("Unsupported header type");
+    const auto headers = loader.GetHeaderLinesWithType(type);
+    if (headers.size() != 1)
+      throw std::invalid_argument("Expected exactly one matching header line");
+    if (args.empty()) return;
+
+    const uint32_t count = headerArgumentCount(type);
+    for (const auto &[index, argument] : args)
+    {
+      if (index >= count || (type == schema::FILE_DESCRIPTION && index != 0))
+        throw std::invalid_argument("Unsupported header argument index");
+      validateHeaderArgument(argument);
+    }
+
+    std::vector<uint8_t> line;
+    appendStringToken(line, IfcTokenType::LABEL, typeName(type));
+    appendToken(line, IfcTokenType::SET_BEGIN);
+    loader.MoveToHeaderLineArgument(headers.front(), 0);
+    for (uint32_t index = 0; index < count; ++index)
+    {
+      if (loader.IsAtEnd()) throw std::invalid_argument("Malformed IFC header line");
+      const auto token = loader.GetTokenType();
+      loader.StepBack();
+      if (token == IfcTokenType::SET_END || token == IfcTokenType::LINE_END)
+        throw std::invalid_argument("Header argument count mismatch");
+      const size_t offset = line.size();
+      copyExistingArgument(loader, line);
+      const auto replacement = args.find(index);
+      if (replacement != args.end())
+      {
+        line.resize(offset);
+        appendArgument(line, replacement->second);
+      }
+    }
+    if (loader.IsAtEnd() || loader.GetTokenType() != IfcTokenType::SET_END ||
+        loader.IsAtEnd() || loader.GetTokenType() != IfcTokenType::LINE_END)
+      throw std::invalid_argument("Header argument count mismatch");
+    loader.UpdateHeaderLineTape(headers.front(), pushHeaderLine(loader, line));
+  }
+
+  void CreateHeaderLine(IfcLoader &loader, uint32_t type,
+                        const std::vector<ArgumentValue> &args)
+  {
+    const uint32_t count = headerArgumentCount(type);
+    if (!loader.GetHeaderLinesWithType(type).empty())
+      throw std::invalid_argument("Header line already exists");
+    if (args.size() != count)
+      throw std::invalid_argument("Header argument count mismatch");
+    for (const auto &argument : args)
+      validateHeaderArgument(argument);
+    if (type == schema::FILE_SCHEMA)
+    {
+      const auto *list = std::get_if<ArgumentValue::List>(&args.front().value);
+      if (!list || list->empty())
+        throw std::invalid_argument("FILE_SCHEMA requires a non-empty list of schema names");
+    }
+
+    std::vector<uint8_t> line;
+    appendStringToken(line, IfcTokenType::LABEL, typeName(type));
+    appendToken(line, IfcTokenType::SET_BEGIN);
+    for (const auto &argument : args)
+      appendArgument(line, argument);
+    loader.AddHeaderLineTape(type, pushHeaderLine(loader, line));
   }
 
   void DeleteLine(IfcLoader &loader, uint32_t expressID)

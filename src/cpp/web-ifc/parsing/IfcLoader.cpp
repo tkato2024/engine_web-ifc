@@ -147,15 +147,17 @@ namespace webifc::parsing {
       output << "******************************************************/" << std::endl;
       
       uint32_t linesWritten = 0;
+      auto headerLines = OrderedHeaderLines();
+      std::vector<IfcLine> dataLines;
       for (uint8_t z=0; z < 2; z++)
       {
         std::vector<IfcLine>* currentLines;
-        if(z==0) currentLines= (std::vector<IfcLine>*) &_headerLines;
+        if(z==0) currentLines= &headerLines;
         else {
-          currentLines =  new std::vector<IfcLine>();
+          currentLines = &dataLines;
           std::transform( _lines.begin(), _lines.end(), std::back_inserter( *currentLines ), [](auto &kv){ return kv.second;}  );
         }
-        if (orderLinesByExpressID) {
+        if (z == 1 && orderLinesByExpressID) {
           // Sort based on tapeOffset, which preserves the order by which the lines have been pushed
           std::sort(currentLines->begin(), currentLines->end(), [](const IfcLine& a, const IfcLine& b) { return a.tapeOffset < b.tapeOffset; });
         }
@@ -301,13 +303,12 @@ namespace webifc::parsing {
        }
      }
 
-     std::vector<IfcLine> headerLines(_headerLines);
+     auto headerLines = OrderedHeaderLines();
 
      if (orderLinesByTapeOffset)
      {
        // Sort based on tapeOffset, which preserves the order by which the lines have been pushed
        auto byTapeOffset = [](const IfcLine &a, const IfcLine &b) { return a.tapeOffset < b.tapeOffset; };
-       std::sort(headerLines.begin(), headerLines.end(), byTapeOffset);
        std::sort(dataLines.begin(), dataLines.end(), byTapeOffset);
      }
 
@@ -439,7 +440,13 @@ namespace webifc::parsing {
    
    void IfcLoader::MoveToHeaderLineArgument(const uint32_t lineID, const uint32_t argumentIndex) const
    { 
-     _tokenStream->MoveTo(_headerLines[lineID].tapeOffset);
+     _tokenStream->MoveTo(_headerLines.at(lineID).tapeOffset);
+     if (IsAtEnd() || GetTokenType() != IfcTokenType::LABEL)
+       throw std::invalid_argument("Malformed IFC header line");
+     _tokenStream->ReadString();
+     if (IsAtEnd() || GetTokenType() != IfcTokenType::SET_BEGIN)
+       throw std::invalid_argument("Malformed IFC header line");
+     StepBack();
    	 ArgumentOffset(argumentIndex);	
    }
    
@@ -572,6 +579,26 @@ namespace webifc::parsing {
       l.ifcType = type;
       l.tapeOffset = start;
       _headerLines.push_back(l);
+  }
+
+  void IfcLoader::UpdateHeaderLineTape(const uint32_t lineID, const uint32_t start)
+  {
+      _headerLines.at(lineID).tapeOffset = start;
+  }
+
+  std::vector<IfcLoader::IfcLine> IfcLoader::OrderedHeaderLines() const
+  {
+      auto lines = _headerLines;
+      auto order = [](uint32_t type) {
+        if (type == schema::FILE_DESCRIPTION) return 0;
+        if (type == schema::FILE_NAME) return 1;
+        if (type == schema::FILE_SCHEMA) return 2;
+        return 3;
+      };
+      std::stable_sort(lines.begin(), lines.end(), [&](const IfcLine &a, const IfcLine &b) {
+        return order(a.ifcType) < order(b.ifcType);
+      });
+      return lines;
   }
   
   IfcTokenType IfcLoader::GetTokenType(uint32_t tapeOffset) const
