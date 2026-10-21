@@ -242,6 +242,7 @@ namespace webifc::parsing
         loader.StepBack();
         append<uint32_t>(out, loader.GetRefArgument());
         return;
+      case IfcTokenType::BINARY:
       case IfcTokenType::STRING:
       case IfcTokenType::LABEL:
       case IfcTokenType::ENUM:

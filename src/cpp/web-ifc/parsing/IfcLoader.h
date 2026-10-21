@@ -34,8 +34,8 @@ namespace webifc::parsing
       const std::vector<uint32_t> GetHeaderLinesWithType(const uint32_t type) const;
       std::vector<InverseReference> GetReferrers(const uint32_t expressID) const;
       std::vector<uint32_t> GetReferrers(const uint32_t expressID, const uint32_t sourceType, const uint16_t argumentIndex) const;
-      void LoadFile(const std::function<uint32_t(char *, size_t, size_t)> &requestData);
-      void LoadFile(std::istream &requestData);
+      bool LoadFile(const std::function<uint32_t(char *, size_t, size_t)> &requestData);
+      bool LoadFile(std::istream &requestData);
       void SaveFile(const std::function<void(char *, size_t)> &outputData, bool orderLinesByExpressID) const;
       void SaveFile(std::ostream &outputData, bool orderLinesByExpressID) const;
       void SaveFile(std::ostream &outputData, bool orderLinesByTapeOffset, const std::vector<uint32_t> *expressIDs) const;
