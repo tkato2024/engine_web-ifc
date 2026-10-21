@@ -645,120 +645,88 @@ namespace webifc::geometry
 		return ToIfcGeometry(bimGeometry::Extrude(profile_vector, dir, distance, cuttingPlaneNormal, cuttingPlanePos));
 	}
 
-	inline std::vector<glm::dvec3> CleanProfileLoop(const std::vector<glm::dvec3> &loop)
+	// Connect corresponding sampled edges of the start and end profiles.
+	// End profile placement is already applied by GetProfile; translate only by the spine.
+	inline IfcGeometry ExtrudeTapered(const IfcProfile& start, const IfcProfile& end, glm::dvec3 dir, double depth)
 	{
-		std::vector<glm::dvec3> cleaned = loop;
-		if (cleaned.size() > 1)
+		IfcGeometry geom;
+		if (start.isComposite || end.isComposite)
 		{
-			glm::dvec3 lastToFirstPoint = cleaned.front() - cleaned.back();
-			if (glm::length(lastToFirstPoint) <= 1e-8)
+			if (!start.isComposite || !end.isComposite || start.profiles.size() != end.profiles.size())
 			{
-				cleaned.pop_back();
+				spdlog::error("[ExtrudeTapered()] Incompatible composite profiles");
+				return geom;
+			}
+			for (size_t i = 0; i < start.profiles.size(); ++i)
+				geom.AddGeometry(ExtrudeTapered(start.profiles[i], end.profiles[i], dir, depth));
+			return geom;
+		}
+		if (start.holes.size() != end.holes.size() || glm::length(dir) == 0 || dir.z == 0)
+		{
+			spdlog::error("[ExtrudeTapered()] Incompatible boundaries or extrusion direction");
+			return geom;
+		}
+		const glm::dvec3 offset = glm::normalize(dir) * depth;
+		std::vector<std::vector<glm::dvec2>> lower, upper;
+		for (size_t ring = 0; ring <= start.holes.size(); ++ring)
+		{
+			auto a = ring == 0 ? start.curve.points : start.holes[ring - 1].points;
+			auto b = ring == 0 ? end.curve.points : end.holes[ring - 1].points;
+			if (a.size() > 1 && glm::length(a.front() - a.back()) < 1e-8) a.pop_back();
+			if (b.size() > 1 && glm::length(b.front() - b.back()) < 1e-8) b.pop_back();
+			if (a.size() < 3 || a.size() != b.size())
+			{
+				spdlog::error("[ExtrudeTapered()] Profiles need matching sampled boundary vertices");
+				return IfcGeometry();
+			}
+			// Reverse both boundaries together to preserve vertex correspondence.
+			double area = 0;
+			for (size_t i = 0; i < a.size(); ++i)
+				area += a[i].x * a[(i + 1) % a.size()].y - a[(i + 1) % a.size()].x * a[i].y;
+			if ((area > 0) != (ring == 0))
+			{
+				std::reverse(a.begin(), a.end());
+				std::reverse(b.begin(), b.end());
+			}
+			lower.emplace_back(); upper.emplace_back();
+			for (size_t i = 0; i < a.size(); ++i)
+			{
+				lower.back().emplace_back(a[i].x, a[i].y);
+				upper.back().emplace_back(b[i].x, b[i].y);
 			}
 		}
-		return cleaned;
-	}
-
-	inline bool ValidateTaperedLoopPair(const char *label, const std::vector<glm::dvec3> &startLoop, const std::vector<glm::dvec3> &endLoop)
-	{
-		if (startLoop.size() != endLoop.size())
+		auto face = [&](glm::dvec3 a, glm::dvec3 b, glm::dvec3 c)
 		{
-			spdlog::error("[ExtrudeTapered()] {} point count mismatch ({} != {})", label, startLoop.size(), endLoop.size());
-			return false;
-		}
-
-		if (startLoop.size() < 3)
+			if (offset.z < 0) std::swap(b, c);
+			geom.AddFace(a, b, c);
+		};
+		for (size_t ring = 0; ring < lower.size(); ++ring)
 		{
-			spdlog::error("[ExtrudeTapered()] {} has too few points ({})", label, startLoop.size());
-			return false;
-		}
-
-		return true;
-	}
-
-	inline IfcGeometry ExtrudeTapered(const IfcProfile &startProfile, const IfcProfile &endProfile, glm::dvec3 dir, double distance)
-	{
-		spdlog::debug("[ExtrudeTapered({})]");
-
-		IfcGeometry empty;
-
-		if (startProfile.holes.size() != endProfile.holes.size())
-		{
-			spdlog::error("[ExtrudeTapered()] hole count mismatch ({} != {})", startProfile.holes.size(), endProfile.holes.size());
-			return empty;
-		}
-
-		std::vector<std::vector<glm::dvec3>> startLoops;
-		std::vector<std::vector<glm::dvec3>> endLoops;
-
-		std::vector<glm::dvec3> startOuter = CleanProfileLoop(startProfile.curve.points);
-		std::vector<glm::dvec3> endOuter = CleanProfileLoop(endProfile.curve.points);
-		if (!ValidateTaperedLoopPair("outer loop", startOuter, endOuter))
-		{
-			return empty;
-		}
-
-		startLoops.push_back(startOuter);
-		endLoops.push_back(endOuter);
-
-		for (size_t i = 0; i < startProfile.holes.size(); i++)
-		{
-			std::vector<glm::dvec3> startHole = CleanProfileLoop(startProfile.holes[i].points);
-			std::vector<glm::dvec3> endHole = CleanProfileLoop(endProfile.holes[i].points);
-			std::string label = "hole " + std::to_string(i);
-			if (!ValidateTaperedLoopPair(label.c_str(), startHole, endHole))
+			for (size_t i = 0; i < lower[ring].size(); ++i)
 			{
-				return empty;
-			}
-
-			startLoops.push_back(startHole);
-			endLoops.push_back(endHole);
-		}
-
-		glm::dvec3 translation = dir * distance;
-		bimGeometry::Geometry geom;
-		std::vector<std::vector<glm::dvec3>> translatedEndLoops;
-		translatedEndLoops.reserve(endLoops.size());
-
-		for (size_t loopIndex = 0; loopIndex < startLoops.size(); loopIndex++)
-		{
-			const std::vector<glm::dvec3> &startLoop = startLoops[loopIndex];
-			std::vector<glm::dvec3> endLoop;
-			endLoop.reserve(endLoops[loopIndex].size());
-			for (const glm::dvec3 &point : endLoops[loopIndex])
-			{
-				endLoop.push_back(point + translation);
-			}
-			translatedEndLoops.push_back(endLoop);
-
-			bool isHole = loopIndex > 0;
-			for (size_t i = 0; i < startLoop.size(); i++)
-			{
-				size_t next = (i + 1) % startLoop.size();
-
-				const glm::dvec3 &bl = startLoop[i];
-				const glm::dvec3 &br = startLoop[next];
-				const glm::dvec3 &tl = endLoop[i];
-				const glm::dvec3 &tr = endLoop[next];
-
-				if (!isHole)
-				{
-					geom.AddFace(tl, br, bl);
-					geom.AddFace(tl, tr, br);
-				}
-				else
-				{
-					geom.AddFace(tl, bl, br);
-					geom.AddFace(tl, br, tr);
-				}
+				const size_t j = (i + 1) % lower[ring].size();
+				const glm::dvec3 a(lower[ring][i], 0), b(lower[ring][j], 0);
+				const glm::dvec3 c = glm::dvec3(upper[ring][j], 0) + offset;
+				const glm::dvec3 d = glm::dvec3(upper[ring][i], 0) + offset;
+				face(a, b, c); face(a, c, d);
 			}
 		}
-
-		double eps = EPS_SMALL;
-		AddSweepCapWithHoles(geom, startLoops, -dir, eps);
-		AddSweepCapWithHoles(geom, translatedEndLoops, dir, eps);
-
-		return ToIfcGeometry(geom);
+		for (int cap = 0; cap < 2; ++cap)
+		{
+			const auto& rings = cap == 0 ? lower : upper;
+			const auto indices = mapbox::earcut<uint32_t>(rings);
+			std::vector<glm::dvec3> points;
+			for (const auto& ring : rings)
+				for (const auto& point : ring)
+					points.push_back(glm::dvec3(point, 0) + (cap == 0 ? glm::dvec3(0) : offset));
+			for (size_t i = 0; i < indices.size(); i += 3)
+			{
+				auto a = points[indices[i]], b = points[indices[i + 1]], c = points[indices[i + 2]];
+				if ((glm::cross(b - a, c - a).z > 0) != (cap == 1)) std::swap(b, c);
+				face(a, b, c);
+			}
+		}
+		return geom;
 	}
 
 	inline glm::dvec3 GetFallbackSweepXAxis(const glm::dvec3 &zAxis)
