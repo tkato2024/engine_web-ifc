@@ -61,7 +61,7 @@ namespace webifc::parsing
        requestData.clear();
        requestData.seekg(sourceOffset);
        requestData.read(dest, destSize);
-       return requestData.gcount();
+       return static_cast<uint32_t>(requestData.gcount());
      }, true);
   }
   

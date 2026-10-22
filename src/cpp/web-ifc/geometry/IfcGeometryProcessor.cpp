@@ -27,6 +27,8 @@
 
 namespace webifc::geometry
 {
+    constexpr size_t MAPPED_REPRESENTATION_CACHE_BYTE_LIMIT = 32 * 1024 * 1024;
+    constexpr size_t MAPPED_REPRESENTATION_CACHE_ENTRY_LIMIT = 4096;
     
     double BOOLSTATUS = 0;
 
@@ -73,8 +75,13 @@ namespace webifc::geometry
         return _expressIDToGeometry[expressID];
     }
 
-    void IfcGeometryProcessor::Clear()
+    void IfcGeometryProcessor::Clear(bool keepMappedRepresentations)
     {
+        if (!keepMappedRepresentations)
+        {
+            _mappedRepresentations.clear();
+            _mappedRepresentationsBytes = 0;
+        }
         _expressIDToGeometry.clear();
         std::unordered_map<uint32_t, IfcGeometry>().swap(_expressIDToGeometry);
         _cache.Clear();
@@ -166,8 +173,62 @@ namespace webifc::geometry
 
     IfcComposedMesh IfcGeometryProcessor::GetMesh(uint32_t expressID)
     {
+        const auto lineType = _loader.GetLineType(expressID);
+        if (lineType != schema::IFCREPRESENTATIONMAP) return GetMeshUncached(expressID, lineType);
+        if (_mappedRepresentationsRevision != _loader.GetRevision())
+        {
+            _mappedRepresentations.clear();
+            _mappedRepresentationsBytes = 0;
+            _mappedRepresentationsRevision = _loader.GetRevision();
+        }
+        auto found = _mappedRepresentations.find(expressID);
+        if (found != _mappedRepresentations.end())
+        {
+            for (const auto& [id, geometry] : found->second.geometries) _expressIDToGeometry[id] = geometry;
+            return found->second.mesh;
+        }
+        auto mesh = GetMeshUncached(expressID, lineType);
+        std::vector<std::pair<uint32_t, const IfcGeometry*>> geometries;
+        size_t bytes = 0;
+        auto capture = [&](auto&& self, const IfcComposedMesh& node) -> bool
+        {
+            bytes += sizeof(IfcComposedMesh);
+            if (node.hasGeometry)
+            {
+                auto found = _expressIDToGeometry.find(node.expressID);
+                if (found == _expressIDToGeometry.end()) return false;
+                const auto& g = found->second;
+                if (!g.part.empty() || !g.sweptDiskSolid.profiles.empty() || !g.sweptDiskSolid.axis.empty()) return false;
+                bytes += sizeof(IfcGeometry) + g.vertexData.size() * sizeof(double)
+                    + g.fvertexData.size() * sizeof(float) + g.indexData.size() * sizeof(uint32_t)
+                    + g.planeData.size() * sizeof(uint32_t) + g.planes.size() * sizeof(bimGeometry::Plane);
+                if (bytes > MAPPED_REPRESENTATION_CACHE_BYTE_LIMIT) return false;
+                geometries.emplace_back(node.expressID, &g);
+            }
+            for (const auto& child : node.children) if (!self(self, child)) return false;
+            return true;
+        };
+        if (capture(capture, mesh) && bytes <= MAPPED_REPRESENTATION_CACHE_BYTE_LIMIT)
+        {
+            if (_mappedRepresentationsBytes + bytes > MAPPED_REPRESENTATION_CACHE_BYTE_LIMIT
+                || _mappedRepresentations.size() >= MAPPED_REPRESENTATION_CACHE_ENTRY_LIMIT)
+            {
+                _mappedRepresentations.clear();
+                _mappedRepresentationsBytes = 0;
+            }
+            MappedRepresentation entry;
+            entry.mesh = mesh;
+            entry.geometries.reserve(geometries.size());
+            for (const auto& [id, geometry] : geometries) entry.geometries.emplace_back(id, *geometry);
+            _mappedRepresentations.emplace(expressID, std::move(entry));
+            _mappedRepresentationsBytes += bytes;
+        }
+        return mesh;
+    }
+
+    IfcComposedMesh IfcGeometryProcessor::GetMeshUncached(uint32_t expressID, uint32_t lineType)
+    {
         spdlog::debug("[GetMesh({})]", expressID);
-        auto lineType = _loader.GetLineType(expressID);
         auto &relVoids = _cache.GetRelVoids();
 
         IfcComposedMesh mesh;
@@ -312,6 +373,72 @@ namespace webifc::geometry
                 uint32_t firstOperandID = _loader.GetRefArgument();
                 uint32_t secondOperandID = _loader.GetRefArgument();
 
+                // DEEP-CHAIN FLATTEN (fixes #1197; also helps deep-chain #1774/#1999): Tekla/Revit
+                // emit (((base - c1) - c2) - ... - cn) as a spine of nested clippings. Processing it
+                // recursively re-runs a full CSG pass per level over the growing result -> ~O(n^2),
+                // which hangs (#1197: StreamAllMeshesWithTypes never completes; 35 half-space clips)
+                // or blows the WASM stack on very long chains (#1774: 1175 extrusion cuts). For a pure-DIFFERENCE
+                // chain with NON-FACETED cutters, A-c1-c2-...-cn == subtract-all-in-one-pass
+                // (mathematically exact), so we collect the whole spine iteratively and do a
+                // SINGLE BoolProcess. Gated on depth>=8 so normal shallow booleans are untouched;
+                // faceted/brep cutters keep the exact sequential baseline (one-pass corrupts them).
+                {
+                    auto isFacetedCut = [&](uint32_t id) {
+                        auto t = _loader.GetLineType(id);
+                        return t == schema::IFCPOLYGONALFACESET || t == schema::IFCTRIANGULATEDFACESET ||
+                               t == schema::IFCFACETEDBREP || t == schema::IFCFACEBASEDSURFACEMODEL ||
+                               t == schema::IFCSHELLBASEDSURFACEMODEL || t == schema::IFCCONNECTEDFACESET;
+                    };
+                    std::vector<uint32_t> cutterIDs;
+                    uint32_t baseID = firstOperandID;
+                    bool nonFaceted = !isFacetedCut(secondOperandID);
+                    cutterIDs.push_back(secondOperandID);
+                    while (true)
+                    {
+                        auto lt = _loader.GetLineType(baseID);
+                        if (lt == schema::IFCBOOLEANCLIPPINGRESULT)
+                        {
+                            _loader.MoveToArgumentOffset(baseID, 1);
+                            uint32_t f = _loader.GetRefArgument();
+                            uint32_t s = _loader.GetRefArgument();
+                            cutterIDs.push_back(s); if (isFacetedCut(s)) nonFaceted = false; baseID = f;
+                        }
+                        else if (lt == schema::IFCBOOLEANRESULT)
+                        {
+                            _loader.MoveToArgumentOffset(baseID, 0);
+                            std::string_view bop = _loader.GetStringArgument();
+                            if (bop != "DIFFERENCE") break;
+                            uint32_t f = _loader.GetRefArgument();
+                            uint32_t s = _loader.GetRefArgument();
+                            cutterIDs.push_back(s); if (isFacetedCut(s)) nonFaceted = false; baseID = f;
+                        }
+                        else break;
+                    }
+                    if (nonFaceted && cutterIDs.size() >= 8)
+                    {
+                        auto baseMesh = GetMesh(baseID);
+                        auto origin2 = GetOrigin(baseMesh, _expressIDToGeometry);
+                        auto normalizeMat2 = glm::translate(-origin2);
+                        auto flatBase = flatten(baseMesh, _expressIDToGeometry, normalizeMat2);
+                        if (flatBase.size() != 0)
+                        {
+                            std::vector<IfcGeometry> flatCuts;
+                            for (auto cid : cutterIDs)
+                            {
+                                auto cm = GetMesh(cid);
+                                auto fc = flatten(cm, _expressIDToGeometry, normalizeMat2);
+                                for (auto &g : fc) flatCuts.push_back(g);
+                            }
+                            IfcGeometry resultMesh = BoolProcess(flatBase, flatCuts, "DIFFERENCE", _settings);
+                            _expressIDToGeometry[expressID] = resultMesh;
+                            mesh.hasGeometry = true;
+                            mesh.transformation = glm::translate(origin2);
+                            if (!mesh.hasColor && baseMesh.hasColor) { mesh.hasColor = true; mesh.color = baseMesh.color; }
+                            return mesh;
+                        }
+                    }
+                }
+
                 auto firstMesh = GetMesh(firstOperandID);
                 auto secondMesh = GetMesh(secondOperandID);
 
@@ -350,6 +477,69 @@ namespace webifc::geometry
 
                 uint32_t firstOperandID = _loader.GetRefArgument();
                 uint32_t secondOperandID = _loader.GetRefArgument();
+
+                // DEEP-CHAIN FLATTEN (perf, same rationale as IFCBOOLEANCLIPPINGRESULT above):
+                // a long pure-DIFFERENCE spine (#1774: 1175 nested IfcBooleanResult extrusion cuts)
+                // hangs when processed recursively (one CSG pass per level). Collect the whole
+                // DIFFERENCE spine iteratively and subtract every NON-FACETED cutter in a single
+                // BoolProcess. Exact for difference; gated depth>=8; faceted cutters excluded.
+                if (op == "DIFFERENCE")
+                {
+                    auto isFacetedCut = [&](uint32_t id) {
+                        auto t = _loader.GetLineType(id);
+                        return t == schema::IFCPOLYGONALFACESET || t == schema::IFCTRIANGULATEDFACESET ||
+                               t == schema::IFCFACETEDBREP || t == schema::IFCFACEBASEDSURFACEMODEL ||
+                               t == schema::IFCSHELLBASEDSURFACEMODEL || t == schema::IFCCONNECTEDFACESET;
+                    };
+                    std::vector<uint32_t> cutterIDs;
+                    uint32_t baseID = firstOperandID;
+                    bool nonFaceted = !isFacetedCut(secondOperandID);
+                    cutterIDs.push_back(secondOperandID);
+                    while (true)
+                    {
+                        auto lt = _loader.GetLineType(baseID);
+                        if (lt == schema::IFCBOOLEANCLIPPINGRESULT)
+                        {
+                            _loader.MoveToArgumentOffset(baseID, 1);
+                            uint32_t f = _loader.GetRefArgument();
+                            uint32_t s = _loader.GetRefArgument();
+                            cutterIDs.push_back(s); if (isFacetedCut(s)) nonFaceted = false; baseID = f;
+                        }
+                        else if (lt == schema::IFCBOOLEANRESULT)
+                        {
+                            _loader.MoveToArgumentOffset(baseID, 0);
+                            std::string_view bop = _loader.GetStringArgument();
+                            if (bop != "DIFFERENCE") break;
+                            uint32_t f = _loader.GetRefArgument();
+                            uint32_t s = _loader.GetRefArgument();
+                            cutterIDs.push_back(s); if (isFacetedCut(s)) nonFaceted = false; baseID = f;
+                        }
+                        else break;
+                    }
+                    if (nonFaceted && cutterIDs.size() >= 8)
+                    {
+                        auto baseMesh = GetMesh(baseID);
+                        auto origin2 = GetOrigin(baseMesh, _expressIDToGeometry);
+                        auto normalizeMat2 = glm::translate(-origin2);
+                        auto flatBase = flatten(baseMesh, _expressIDToGeometry, normalizeMat2);
+                        if (flatBase.size() != 0)
+                        {
+                            std::vector<IfcGeometry> flatCuts;
+                            for (auto cid : cutterIDs)
+                            {
+                                auto cm = GetMesh(cid);
+                                auto fc = flatten(cm, _expressIDToGeometry, normalizeMat2);
+                                for (auto &g : fc) flatCuts.push_back(g);
+                            }
+                            IfcGeometry resultMesh = BoolProcess(flatBase, flatCuts, "DIFFERENCE", _settings);
+                            _expressIDToGeometry[expressID] = resultMesh;
+                            mesh.hasGeometry = true;
+                            mesh.transformation = glm::translate(origin2);
+                            if (!mesh.hasColor && baseMesh.hasColor) { mesh.hasColor = true; mesh.color = baseMesh.color; }
+                            return mesh;
+                        }
+                    }
+                }
 
 #ifdef NARY_UNION
                 // N-ARY DIFFERENCE for the Tekla coplanar-cut pattern (model 1092): a
@@ -817,12 +1007,18 @@ namespace webifc::geometry
                     // std::cout << "Unsupported IFCTRIANGULATEDFACESET with PnIndex!" << std::endl;
                 }
 
-                for (size_t i = 0; i < indices.size(); i += 3)
+                for (size_t i = 0; i + 2 < indices.size(); i += 3)
                 {
                     int i1 = indices[i + 0] - 1;
                     int i2 = indices[i + 1] - 1;
                     int i3 = indices[i + 2] - 1;
 
+                    if (i1 < 0 || i2 < 0 || i3 < 0 ||
+                        static_cast<size_t>(i1) >= points.size() || static_cast<size_t>(i2) >= points.size() || static_cast<size_t>(i3) >= points.size())
+                    {
+                        spdlog::error("[GetMesh()] Invalid triangulated face index in {}", expressID);
+                        return mesh;
+                    }
                     geom.AddFace(points[i1], points[i2], points[i3]);
                 }
 
@@ -1050,8 +1246,6 @@ namespace webifc::geometry
             }
             case schema::IFCREVOLVEDAREASOLID:
             {
-                IfcComposedMesh mesh;
-
                 _loader.MoveToArgumentOffset(expressID, 0);
                 uint32_t profileID = _loader.GetRefArgument();
                 uint32_t placementID = _loader.GetOptionalRefArgument();

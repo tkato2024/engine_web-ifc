@@ -551,7 +551,7 @@ export class IfcAPI {
     let result = this.wasmModule.OpenModel(
       s,
       (destPtr: number, offsetInSrc: number, destSize: number) => {
-        let srcSize = Math.min(data.byteLength - offsetInSrc, destSize);
+        let srcSize = Math.max(0, Math.min(data.byteLength - offsetInSrc, destSize));
         let dest = this.wasmModule.HEAPU8.subarray(destPtr, destPtr + srcSize);
         let src = data.subarray(offsetInSrc, offsetInSrc + srcSize);
         dest.set(src);
@@ -560,8 +560,12 @@ export class IfcAPI {
     );
     if (result < 0) return -1;
     this.deletedLines.set(result, new Set());
-    var schemaName = this.GetHeaderLine(result, FILE_SCHEMA).arguments[0][0]
-      .value;
+    var schemaName = this.GetHeaderLine(result, FILE_SCHEMA).arguments[0][0].value;
+    if (typeof schemaName !== "string") {
+      Log.error("Missing or invalid FILE_SCHEMA header");
+      this.CloseModel(result);
+      return -1;
+    }
     let id = this.LookupSchemaId(schemaName, s.ALLOW_INCOMPATIBLE_SCHEMA_ALIASES);
     if (id == -1) {
       Log.error("Unsupported Schema:" + schemaName);
@@ -597,8 +601,12 @@ export class IfcAPI {
     );
     if (result < 0) return -1;
     this.deletedLines.set(result, new Set());
-    var schemaName = this.GetHeaderLine(result, FILE_SCHEMA).arguments[0][0]
-      .value;
+    var schemaName = this.GetHeaderLine(result, FILE_SCHEMA).arguments[0][0].value;
+    if (typeof schemaName !== "string") {
+      Log.error("Missing or invalid FILE_SCHEMA header");
+      this.CloseModel(result);
+      return -1;
+    }
     this.modelSchemaList[result] = this.LookupSchemaId(schemaName, s.ALLOW_INCOMPATIBLE_SCHEMA_ALIASES);
     this.modelSchemaNameList[result] = schemaName;
     if (this.modelSchemaList[result] == -1) {
@@ -1410,25 +1418,29 @@ export class IfcAPI {
    * @param modelID Model handle retrieved by OpenModel
    * @param expressIDs expressIDs of elements to stream
    * @param meshCallback callback function that is called for each mesh
+   * @param applyLinearScalingFactor Whether to apply the model's linear scaling factor to the geometry (default: true)
    */
   StreamMeshes(
     modelID: number,
     expressIDs: Array<number>,
-    meshCallback: (mesh: FlatMesh, index: number, total: number) => void
+    meshCallback: (mesh: FlatMesh, index: number, total: number) => void,
+    applyLinearScalingFactor: boolean = true
   ) {
-    this.wasmModule.StreamMeshes(modelID, expressIDs, meshCallback);
+    this.wasmModule.StreamMeshes(modelID, expressIDs, meshCallback, applyLinearScalingFactor);
   }
 
   /**
    * Streams all meshes of a model
    * @param modelID Model handle retrieved by OpenModel
    * @param meshCallback callback function that is called for each mesh
+   * @param applyLinearScalingFactor Whether to apply the model's linear scaling factor to the geometry (default: true)
    */
   StreamAllMeshes(
     modelID: number,
-    meshCallback: (mesh: FlatMesh, index: number, total: number) => void
+    meshCallback: (mesh: FlatMesh, index: number, total: number) => void,
+    applyLinearScalingFactor: boolean = true
   ) {
-    this.wasmModule.StreamAllMeshes(modelID, meshCallback);
+    this.wasmModule.StreamAllMeshes(modelID, meshCallback, applyLinearScalingFactor);
   }
 
   /**
@@ -1436,13 +1448,15 @@ export class IfcAPI {
    * @param modelID Model handle retrieved by OpenModel
    * @param types types of elements to stream
    * @param meshCallback callback function that is called for each mesh
+   * @param applyLinearScalingFactor Whether to apply the model's linear scaling factor to the geometry (default: true)
    */
   StreamAllMeshesWithTypes(
     modelID: number,
     types: Array<number>,
-    meshCallback: (mesh: FlatMesh, index: number, total: number) => void
+    meshCallback: (mesh: FlatMesh, index: number, total: number) => void,
+    applyLinearScalingFactor: boolean = true
   ) {
-    this.wasmModule.StreamAllMeshesWithTypes(modelID, types, meshCallback);
+    this.wasmModule.StreamAllMeshesWithTypes(modelID, types, meshCallback, applyLinearScalingFactor);
   }
 
   /**
@@ -1457,10 +1471,11 @@ export class IfcAPI {
   /**
    * Load all geometry in a model
    * @param modelID Model handle retrieved by OpenModel
+   * @param applyLinearScalingFactor Whether to apply the model's linear scaling factor to the geometry (default: true)
    * @returns Vector of FlatMesh objects
    */
-  LoadAllGeometry(modelID: number): Vector<FlatMesh> {
-    let flatMeshes = this.wasmModule.LoadAllGeometry(modelID);
+  LoadAllGeometry(modelID: number, applyLinearScalingFactor: boolean = true): Vector<FlatMesh> {
+    let flatMeshes = this.wasmModule.LoadAllGeometry(modelID, applyLinearScalingFactor);
     flatMeshes[Symbol.iterator] = function* () {
       for (let i = 0; i < flatMeshes.size(); i++) yield flatMeshes.get(i);
     };
@@ -1471,10 +1486,11 @@ export class IfcAPI {
    * Load geometry for a single element
    * @param modelID Model handle retrieved by OpenModel
    * @param expressID ExpressID of the element
+   * @param applyLinearScalingFactor Whether to apply the model's linear scaling factor to the geometry (default: true)
    * @returns FlatMesh object
    */
-  GetFlatMesh(modelID: number, expressID: number): FlatMesh {
-    return this.wasmModule.GetFlatMesh(modelID, expressID);
+  GetFlatMesh(modelID: number, expressID: number, applyLinearScalingFactor: boolean = true): FlatMesh {
+    return this.wasmModule.GetFlatMesh(modelID, expressID, applyLinearScalingFactor);
   }
 
   /**
