@@ -74,19 +74,20 @@ FetchContent_MakeAvailable(unordered_dense)
 Message("Downloads Finished")
 
 function(PARAM_SETTER THE_EXECUTABLE)
+	# public headers include glm, earcut (bim-geometry/utils.h) and unordered_dense (IfcLoader.h, IfcCache.h)
 	target_include_directories(${THE_EXECUTABLE} PUBLIC
 		$<BUILD_INTERFACE:${glm_SOURCE_DIR}/>
 		$<BUILD_INTERFACE:${glm_SOURCE_DIR}/glm>
+		$<BUILD_INTERFACE:${earcut_SOURCE_DIR}/include>
+		$<BUILD_INTERFACE:${unordered_dense_SOURCE_DIR}/include>
 	)
 
 	target_include_directories(${THE_EXECUTABLE} PRIVATE
 		$<BUILD_INTERFACE:${tinynurbs_SOURCE_DIR}/include>
 		$<BUILD_INTERFACE:${fastfloat_SOURCE_DIR}/include>
 		$<BUILD_INTERFACE:${cdt_SOURCE_DIR}/CDT/include>
-		$<BUILD_INTERFACE:${earcut_SOURCE_DIR}/include>
 		$<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>
 		$<BUILD_INTERFACE:${stduuid_SOURCE_DIR}/include>
-		$<BUILD_INTERFACE:${unordered_dense_SOURCE_DIR}/include>
 	)
 
 	if(NOT MSVC)
@@ -239,6 +240,12 @@ if(NOT EMSCRIPTEN)
 
 	# Install bundled dependency headers (all header-only)
 	install(DIRECTORY ${glm_SOURCE_DIR}/glm
+		DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+	)
+	install(DIRECTORY ${earcut_SOURCE_DIR}/include/
+		DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+	)
+	install(DIRECTORY ${unordered_dense_SOURCE_DIR}/include/
 		DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 	)
 
