@@ -836,7 +836,6 @@ namespace webifc::geometry
             }
             case schema::IFCSURFACECURVESWEPTAREASOLID:
             {
-
                 // TODO: closed sweeps not implemented
                 // TODO: the plane is not being used now
 
@@ -854,17 +853,31 @@ namespace webifc::geometry
                 auto directrixRef = _loader.GetRefArgument();
                 bool closed = false;
 
-                if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
-                {
-                    _loader.StepBack();
-                    startParam = _loader.GetDoubleArgument();
-                }
-
-                if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
-                {
-                    _loader.StepBack();
-                    endParam = _loader.GetDoubleArgument();
-                }
+                // IFC4 uses optional numbers; IFC4X3 uses IfcCurveMeasureSelect.
+                // Consume the complete typed value, including its closing parenthesis.
+                auto readParam = [&](double defaultValue) {
+                    auto token = _loader.GetTokenType();
+                    if (token == parsing::IfcTokenType::REAL || token == parsing::IfcTokenType::INTEGER)
+                    {
+                        _loader.StepBack();
+                        return _loader.GetDoubleArgument();
+                    }
+                    if (token == parsing::IfcTokenType::LABEL)
+                    {
+                        _loader.StepBack();
+                        auto label = _loader.GetStringArgument();
+                        if ((label == "IFCPARAMETERVALUE" || label == "IFCLENGTHMEASURE") &&
+                            _loader.GetTokenType() == parsing::IfcTokenType::SET_BEGIN)
+                        {
+                            double value = _loader.GetOptionalDoubleParam(defaultValue);
+                            _loader.GetTokenType(); // SET_END of the typed value
+                            return value;
+                        }
+                    }
+                    return defaultValue;
+                };
+                startParam = readParam(startParam);
+                endParam = readParam(endParam);
 
                 auto surfaceID = _loader.GetRefArgument();
 
@@ -907,8 +920,13 @@ namespace webifc::geometry
                 }
 
                 std::reverse(profile.curve.points.begin(), profile.curve.points.end());
+                // Holes must keep the opposite winding to the outer ring
+                for (auto &hole : profile.holes)
+                {
+                    hole.Invert();
+                }
 
-                IfcGeometry geom = Sweep(_cache.GetLinearScalingFactor(), closed, profile, directrix, surface.normal(), true, true, true);
+                IfcGeometry geom = Sweep(_cache.GetLinearScalingFactor(), closed, profile, directrix, surface.normal(), true);
 
                 mesh.transformation = placement;
                 _expressIDToGeometry[expressID] = geom;
@@ -935,7 +953,7 @@ namespace webifc::geometry
                 glm::dvec3 fixedReference = _geometryLoader.GetDirection(fixedReferenceID);
 
                 // Check for valid profile and directrix
-                if (profile.curve.points.empty() || directrix.points.empty())
+                if (profile.curve.points.empty() || directrix.points.size() < 2)
                 {
                     spdlog::error("[GetMesh({})] Invalid profile or directrix for IFCFIXEDREFERENCESWEPTAREASOLID", expressID);
                     return mesh;
