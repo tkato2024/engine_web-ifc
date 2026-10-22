@@ -904,12 +904,11 @@ namespace bimGeometry
 
 				// double prod = glm::dot(n1, n2);
 
-				if (std::isnan(p.x))
+				if (std::isnan(p.x) || glm::length(glm::cross(n1, n2)) <= EPS_MINISCULE)
 				{
-					// TODO: sometimes outliers cause the perp to become NaN!
-					// this is bad news, as it nans the points added to the final mesh
-					// also, it's hard to bail out now :/
-					// see curve.add() for more info on how this is currently "solved"
+					// Collinear segments do not bend here, so any axis perpendicular to the directrix
+					// works and the section plane stays normal to it (otherwise every point turns NaN)
+					p = glm::normalize(glm::cross(n1, std::abs(n1.z) < 0.9 ? glm::dvec3(0, 0, 1) : glm::dvec3(1, 0, 0)));
 				}
 
 				glm::dvec3 u1 = glm::normalize(glm::cross(n1, p));
