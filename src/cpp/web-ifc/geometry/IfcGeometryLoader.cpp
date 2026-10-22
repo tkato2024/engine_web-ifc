@@ -2358,6 +2358,10 @@ namespace webifc::geometry
               vector = glm::dvec3(1, 0, 0);
               placement = glm::dvec3(0, 0, 0);
           }
+          else if (params.trimStart.trimType == TRIM_BY_LENGTH && glm::length(vector) > 1e-12)
+          {
+              vector = glm::normalize(vector);
+          }
           if (condition)
           {
             glm::dvec3 p1 = placement + vector * params.trimStart.value;
@@ -3025,11 +3029,6 @@ namespace webifc::geometry
       segmentParams.edge = false;
       segmentParams.sameSense = -1;
       segmentParams.trimSense = trimSense;
-
-      if (expressID == 192475)
-      {
-          int wait = 0;
-}
 
       ComputeCurve(ParentCurveID, curve, segmentParams);
       
