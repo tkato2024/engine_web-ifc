@@ -50,8 +50,8 @@ namespace webifc::parsing
       std::string GetDecodedStringArgument() const;
       std::string GetExpandedUUIDArgument() const;
       double GetDoubleArgument() const;
-      long GetIntArgument() const;
-      long GetIntArgument(const uint32_t tapeOffset) const;
+      int64_t GetIntArgument() const;
+      int64_t GetIntArgument(const uint32_t tapeOffset) const;
       double GetDoubleArgument(const uint32_t tapeOffset) const;
       std::string_view  GetDoubleArgumentAsString() const;
       double GetOptionalDoubleParam(double defaultValue) const;
