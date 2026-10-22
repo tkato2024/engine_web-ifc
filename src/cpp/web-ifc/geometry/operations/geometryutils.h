@@ -514,7 +514,8 @@ namespace webifc::geometry
 		}
 		const double fullAngle = 2 * glm::pi<double>();
 		const bool closed = std::abs(angle - fullAngle) < 1e-8;
-		const size_t segments = std::max<size_t>(3, std::ceil(std::max<uint16_t>(circleSegments, 12) * angle / fullAngle));
+		// Like other arcs, use the same segment count regardless of the angle.
+		const size_t segments = std::max<size_t>(3, circleSegments);
 		glm::dvec3 centre(0);
 		for (const auto& point : rings[0]) centre += glm::dvec3(point, 0);
 		centre /= static_cast<double>(rings[0].size());
