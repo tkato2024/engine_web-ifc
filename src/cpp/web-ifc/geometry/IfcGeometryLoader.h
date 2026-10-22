@@ -41,6 +41,8 @@ namespace webifc::geometry
     std::optional<IfcTrimmingSelect> ReadOptionalCurveMeasureSelect() const;
     bool TrimCurveByLength(const IfcCurve& curve, const std::optional<IfcTrimmingSelect>& startTrim, const std::optional<IfcTrimmingSelect>& endTrim, IfcCurve& trimmedCurve) const;
 
+    IfcCurve GetCurveWithParameters(uint32_t expressID, uint8_t dimensions, std::optional<double> start, std::optional<double> end) const;
+
     // Helper function to compute the total length of the curve
     double ComputeCurveLength(const IfcCurve& curve) const;
 
