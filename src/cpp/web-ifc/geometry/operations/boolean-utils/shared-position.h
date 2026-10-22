@@ -1276,7 +1276,7 @@ namespace fuzzybools
 
         //============================================================================================
 
-        void TriangulatePlane(Geometry &geom, Plane &p)
+        void TriangulatePlane(Geometry &geom, Plane &p, bool skipTrianglesOnA = false)
         {
 
             // grab all points on the plane
@@ -1379,24 +1379,61 @@ namespace fuzzybools
                 cdt_edges.emplace_back((uint32_t)edge.first, (uint32_t)edge.second);
             }
 
-            auto mapping = CDT::RemoveDuplicatesAndRemapEdges(cdt_verts, cdt_edges).mapping;
+            auto duplicateMapping = CDT::RemoveDuplicatesAndRemapEdges(cdt_verts, cdt_edges).mapping;
 
-            try
+            // CDT maps original vertex indices to deduplicated ones, but its triangles index the
+            // deduplicated vertices; invert the mapping to get back to our projected points.
+            std::vector<size_t> mapping(cdt_verts.size());
+            for (size_t original = duplicateMapping.size(); original-- > 0;)
             {
-                cdt.insertVertices(cdt_verts);
-                cdt.insertEdges(cdt_edges);
-                cdt.eraseSuperTriangle();
-            }
-            catch (...)
-            {
-                // CDT throws when the projected constraint edges self-intersect.
-                // Drop only this plane's triangulation instead of letting the
-                // exception unwind and discard the whole cut operand (which would
-                // render the element uncut). catch(...) works even without RTTI.
-                return;
+                mapping[duplicateMapping[original]] = original;
             }
 
-            auto triangles = cdt.triangles;
+            CDT::TriangleVec triangles;
+            std::vector<CDT::V2d<double>> triangulatedVertices;
+            auto triangulate = [&](CDT::Triangulation<double> &triangulation)
+            {
+                try
+                {
+                    triangulation.insertVertices(cdt_verts);
+                    triangulation.insertEdges(cdt_edges);
+                    triangulation.eraseSuperTriangle();
+                }
+                catch (...)
+                {
+                    // CDT throws when the projected constraint edges self-intersect.
+                    // catch(...) works even without RTTI.
+                    return false;
+                }
+                triangles = triangulation.triangles;
+                triangulatedVertices = triangulation.vertices;
+                return true;
+            };
+
+            if (!triangulate(cdt))
+            {
+                // Nearly coincident lines (e.g. an opening edge a few 1e-5 off a hole edge) produce
+                // constraint edges that cross at a tiny angle. Let CDT split them instead of
+                // dropping the whole plane, which would leave a large hole in the result.
+                CDT::Triangulation<double> resolving(CDT::VertexInsertionOrder::AsProvided, CDT::IntersectingConstraintEdges::TryResolve, TOLERANCE_SCALAR_EQUALITY);
+                if (!triangulate(resolving))
+                {
+                    // Drop only this plane's triangulation instead of letting the
+                    // exception unwind and discard the whole cut operand (which would
+                    // render the element uncut).
+                    return;
+                }
+            }
+
+            // Vertices CDT added at resolved intersections lie on the plane; lift them back to 3D.
+            for (size_t v = cdt_verts.size(); v < triangulatedVertices.size(); v++)
+            {
+                glm::dvec2 projected(triangulatedVertices[v].x, triangulatedVertices[v].y);
+                Vec3 location = basis.origin + basis.left * projected.x + basis.right * projected.y;
+                mapping.push_back(projectedPoints.size());
+                projectedPointToPoint[projectedPoints.size()] = AddPoint(location);
+                projectedPoints.push_back(projected);
+            }
 
             // auto contourLoop = FindLargestEdgeLoop(projectedPoints, edges);
 
@@ -1442,12 +1479,25 @@ namespace fuzzybools
 
                 auto triCenter = (ptA + ptB + ptC) / 3.0;
 
-                Vec raydir = computeNormal(ptA, ptB, ptC);
+                // Cast the classification ray at ~45 degrees to the face instead of using the
+                // face normal. It must have a component along the face normal (a strictly
+                // in-plane ray is rejected by the parallel test in intersect_ray_triangle) and a
+                // component in the face plane (a ray along the normal skips the t=0 coplanar
+                // self-hit, classifying an on-surface triangle as OUTSIDE and dropping it). This
+                // guaranteed construction avoids both degenerate cases for any face orientation,
+                // whereas a fixed ray may equal some face normal and reintroduce the bug (#1932).
+                Vec raydirNorm = computeNormal(ptA, ptB, ptC);
+                Vec raydirInPlane = glm::cross(raydirNorm, Vec(0.0, 0.0, 1.0));
+                if (glm::length(raydirInPlane) < 1e-8)
+                {
+                    raydirInPlane = glm::cross(raydirNorm, Vec(0.0, 1.0, 0.0));
+                }
+                Vec raydir = raydirNorm + glm::normalize(raydirInPlane);
 
                 auto posA = isInsideMesh(triCenter, glm::dvec3(0), relevantA, relevantBVHA, raydir);
                 auto posB = isInsideMesh(triCenter, glm::dvec3(0), relevantB, relevantBVHB, raydir);
 
-                if (posA.loc != MeshLocation::BOUNDARY && posB.loc != MeshLocation::BOUNDARY)
+                if (skipTrianglesOnA && posA.loc == MeshLocation::BOUNDARY)
                 {
                     continue;
                 }
@@ -1456,13 +1506,58 @@ namespace fuzzybools
                 // It can't be discarded because inside/outside could fail when boundaries have internal partitions
                 // Therefore new tests are required to verify that the triangle is on the boundary of A or B
 
-                glm::dvec2 t1 = projectedPoints[tri.vertices[0]];
-                glm::dvec2 t2 = projectedPoints[tri.vertices[1]];
-                glm::dvec2 t3 = projectedPoints[tri.vertices[2]];
+                glm::dvec2 t1 = projectedPoints[mapping[tri.vertices[0]]];
+                glm::dvec2 t2 = projectedPoints[mapping[tri.vertices[1]]];
+                glm::dvec2 t3 = projectedPoints[mapping[tri.vertices[2]]];
 
                 bool inside2d = isInsideBoundary(t1, t2, t3, edges, projectedPoints);
 
-                if (!inside2d)
+                // Fix #2111 & the "missing geometry" family: the ray classifier misses a coplanar
+                // face whose triangle centre lies exactly ON a face of an operand -> the boundary
+                // triangle is classified as neither inside nor boundary and gets dropped, leaving a
+                // hole. Rescue it here, inside the normalization pipeline, so the recovered triangle
+                // shares the already-welded vertices (no T-junctions / non-manifold, unlike a
+                // post-hoc stitch). Only keep it when the centre lies on an original face of A and is
+                // not strictly inside B, i.e. it is a genuine A boundary of the A-B result.
+                bool rescued = false;
+                if (posA.loc != MeshLocation::BOUNDARY && posB.loc != MeshLocation::BOUNDARY)
+                {
+                    auto onFace = [&](const Geometry &g, Vec &outN) -> bool
+                    {
+                        for (size_t fi = 0; fi < g.numFaces; fi++)
+                        {
+                            Face f = g.GetFace(fi);
+                            Vec a = g.GetPoint(f.i0), b = g.GetPoint(f.i1), c = g.GetPoint(f.i2);
+                            Vec nn = glm::cross(b - a, c - a);
+                            double Ln = glm::length(nn);
+                            if (Ln < 1e-12) continue;
+                            nn /= Ln;
+                            double dp = glm::dot(triCenter - a, nn);
+                            if (std::abs(dp) > _TOLERANCE_PLANE_DEVIATION) continue;
+                            Vec p0 = triCenter - dp * nn;
+                            double u = glm::dot(glm::cross(b - a, p0 - a), nn);
+                            double v = glm::dot(glm::cross(c - b, p0 - b), nn);
+                            double w = glm::dot(glm::cross(a - c, p0 - c), nn);
+                            if ((u >= -1e-6 && v >= -1e-6 && w >= -1e-6) || (u <= 1e-6 && v <= 1e-6 && w <= 1e-6))
+                            { outN = nn; return true; }
+                        }
+                        return false;
+                    };
+                    Vec nn;
+                    if (posB.loc != MeshLocation::INSIDE && onFace(relevantA, nn))
+                    {
+                        posA.loc = MeshLocation::BOUNDARY;
+                        posA.normal = nn;
+                        rescued = true;
+                    }
+                }
+
+                if (posA.loc != MeshLocation::BOUNDARY && posB.loc != MeshLocation::BOUNDARY)
+                {
+                    continue;
+                }
+
+                if (!inside2d && !rescued)
                 {
 
                     auto postA = isInsideMesh(triCenter, glm::dvec3(0), relevantA, relevantBVHA, raydir);
@@ -1511,8 +1606,10 @@ namespace fuzzybools
                 //    continue;
                 //}
 
-                // TODO: why is this swapped? winding doesnt matter much, but still
-                geom.AddFace(ptB, ptA, ptC, p.refPlane);
+                // Preserve the operand boundary orientation, including shared planes.
+                const auto boundaryNormal = posA.loc == MeshLocation::BOUNDARY ? posA.normal : posB.normal;
+                if (glm::dot(raydir, boundaryNormal) < 0) std::swap(ptA, ptB);
+                geom.AddFace(ptA, ptB, ptC, p.refPlane);
 
 #ifdef CSG_DEBUG_OUTPUT
                 // edges3DTriangles.push_back({ glm::dvec2(ptA.z+ ptA.x/2, ptA.y+ ptA.x/2), glm::dvec2(ptB.z+ ptB.x/2, ptB.y+ ptB.x/2) });
@@ -1967,6 +2064,28 @@ namespace fuzzybools
         // from this starting point, we can triangulate all planes and obtain the triangulation of the intersected set of geometries
         // this mesh itself is not a boolean result, but rather a merging of all operands
 
+        // In a difference, a plane that only B uses and that is the reverse of a plane of A holds
+        // the contact region of two touching faces. A's plane already produces the triangles lying
+        // on A there; producing them again from B's plane adds a second, differently triangulated
+        // copy that is removed only when both triangulations happen to be identical.
+        auto isReversedPlaneOfA = [&](const Plane &plane)
+        {
+            if (UNION || plane.refPlane < static_cast<int>(A.planes.size()))
+            {
+                return false;
+            }
+            for (auto &other : sp.planes)
+            {
+                if (other.refPlane >= 0 && other.refPlane < static_cast<int>(A.planes.size()) &&
+                    equals(other.normal, -plane.normal, toleranceVectorEquality) &&
+                    equals(other.distance, -plane.distance, TOLERANCE_SCALAR_EQUALITY))
+                {
+                    return true;
+                }
+            }
+            return false;
+        };
+
         Geometry geom;
         for (auto &plane : sp.planes)
         {
@@ -2001,7 +2120,7 @@ namespace fuzzybools
             // DumpSVGLines(edges, L"contour.html");
 #endif
 
-            sp.TriangulatePlane(geom, plane);
+            sp.TriangulatePlane(geom, plane, isReversedPlaneOfA(plane));
 
 #ifdef CSG_DEBUG_OUTPUT
             // DumpGeometry(geom, L"triangulated.obj");
