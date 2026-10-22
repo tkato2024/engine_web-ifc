@@ -1030,35 +1030,26 @@ namespace webifc::geometry
                     innerRadius = _loader.GetDoubleArgument();
                 }
 
-                // double startParam = 0;
-                // double endParam = 0;
-
+                std::optional<double> startParam, endParam;
                 if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
                 {
                     _loader.StepBack();
-                    _loader.GetDoubleArgument();
+                    startParam = _loader.GetDoubleArgument();
                 }
-
                 if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
                 {
                     _loader.StepBack();
-                    _loader.GetDoubleArgument();
+                    endParam = _loader.GetDoubleArgument();
                 }
 
-                IfcCurve directrix = _geometryLoader.GetCurve(directrixRef, 3);
-                if (directrix.points.size() >= 2)
-                {
-                    closed = glm::distance(directrix.points.front(), directrix.points.back()) < EPS_SMALL;
-                }
+                IfcCurve directrix = _geometryLoader.GetCurveWithParameters(directrixRef, 3, startParam, endParam);
+                if (directrix.points.size() < 2) return mesh;
+                closed = directrix.points.size() > 2 && glm::distance(directrix.points.front(), directrix.points.back()) < EPS_SMALL;
 
                 IfcProfile profile;
                 profile.curve = GetCircleCurve(radius, _settings._circleSegments);
-                if (innerRadius > EPS_SMALL && innerRadius < radius - EPS_SMALL)
-                {
-                    profile.holes.push_back(GetCircleCurve(innerRadius, _settings._circleSegments));
-                }
 
-                IfcGeometry geom = SweepCircular(_cache.GetLinearScalingFactor(), closed, profile, radius, directrix, glm::dvec3(0), false, true, innerRadius);
+                IfcGeometry geom = SweepCircular(_cache.GetLinearScalingFactor(), closed, profile, radius, directrix, glm::dvec3(0), false, innerRadius);
 
                 geom.sweptDiskSolid.axis = std::vector<IfcCurve>{directrix};
                 geom.sweptDiskSolid.profiles = std::vector<IfcProfile>{profile};

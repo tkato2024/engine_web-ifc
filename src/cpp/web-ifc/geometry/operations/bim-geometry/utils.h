@@ -1209,21 +1209,10 @@ namespace bimGeometry
 		AddSweepCapWithHoles(geom, profiles, normalWanted, eps);
 	}
 
-	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool cap = false, const double innerRadius = 0.0)
+	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const double innerRadius = 0)
 	{
 		Geometry geom;
-		double outerRadius = radius;
-		bool hasInner = innerRadius > EPS_SMALL && outerRadius > EPS_SMALL && innerRadius < outerRadius - EPS_SMALL;
-		std::vector<glm::dvec3> innerProfile;
-		if (hasInner)
-		{
-			double scale = innerRadius / outerRadius;
-			innerProfile.reserve(profile.size());
-			for (const auto &pt : profile)
-			{
-				innerProfile.push_back(pt * scale);
-			}
-		}
+		if (radius <= 0 || innerRadius < 0 || innerRadius >= radius) return geom;
 
 		std::vector<glm::vec<3, glm::f64>> dpts;
 
@@ -1265,13 +1254,11 @@ namespace bimGeometry
 
 		// compute curve for each part of the directrix
 		std::vector<std::vector<glm::dvec3>> curves;
-		std::vector<std::vector<glm::dvec3>> innerCurves;
 		std::vector<glm::dmat4> transforms;
 
 		for (size_t i = 0; i < dpts.size(); i++)
 		{
 			std::vector<glm::dvec3> segmentForCurve;
-			std::vector<glm::dvec3> innerSegmentForCurve;
 
 			glm::dvec3 planeNormal;
 			glm::dvec3 directrixSegmentNormal;
@@ -1291,7 +1278,12 @@ namespace bimGeometry
 			}
 			else // middle
 			{
-				ResolveSweepFrameMiddle(dpts[i - 1], dpts[i], dpts[i + 1], planeNormal, directrixSegmentNormal);
+                const glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
+                const glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
+                // A reversal has no finite miter plane. Collinear forward segments do.
+                if (glm::dot(n1, n2) < -0.999999) return geom;
+                planeNormal = glm::normalize(n1 + n2);
+                directrixSegmentNormal = n1;
 				planeOrigin = dpts[i];
 			}
 
@@ -1341,21 +1333,6 @@ namespace bimGeometry
 
 					segmentForCurve.push_back(proj);
 				}
-				if (hasInner)
-				{
-					auto &innerPpts = innerProfile;
-					for (auto &pt2D : innerPpts)
-					{
-						glm::dvec3 pt = -pt2D.x * left + -pt2D.y * right + planeOrigin;
-						if (rotate90)
-						{
-							pt = -pt2D.x * right - pt2D.y * left + planeOrigin;
-						}
-						glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
-
-						innerSegmentForCurve.push_back(proj);
-					}
-				}
 			}
 			else
 			{
@@ -1369,26 +1346,11 @@ namespace bimGeometry
 
 					segmentForCurve.push_back(proj);
 				}
-				if (hasInner && !innerCurves.empty())
-				{
-					const std::vector<glm::dvec3> &prevInnerCurve = innerCurves.back();
-					auto &innerPpts = prevInnerCurve;
-					for (auto &pt : innerPpts)
-					{
-						glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
-
-						innerSegmentForCurve.push_back(proj);
-					}
-				}
 			}
 
 			if (!closed || (i != 0 && i != dpts.size() - 1))
 			{
 				curves.push_back(segmentForCurve);
-				if (hasInner)
-				{
-					innerCurves.push_back(innerSegmentForCurve);
-				}
 			}
 		}
 
@@ -1398,86 +1360,58 @@ namespace bimGeometry
 			dpts.erase(dpts.begin());
 		}
 
-		std::vector<std::vector<uint32_t>> curvePointIndices;
-		curvePointIndices.reserve(curves.size());
-		for (size_t i = 0; i < curves.size(); ++i)
-		{
-			auto& pts = curves[i];
-			std::vector<uint32_t>& indices = curvePointIndices.emplace_back();
-			indices.reserve(pts.size());
-			const glm::dvec3 center = dpts[i];
-
-			for (glm::dvec3& p : pts)
-			{
-				// Radially outward normals
-				glm::dvec3 n = p - center;
-				const double len2 = glm::dot(n, n);
-				n = (len2 > 0.0) ? n / std::sqrt(len2) : glm::dvec3(0.0, 0.0, 1.0);
-				geom.AddPoint(p, n);
-				indices.push_back(geom.numPoints - 1);
-			}
-		}
- 		// connect consecutive circles with faces
-		for (size_t i = 1; i < dpts.size(); i++)
-		{
-			const auto& idx1 = curvePointIndices[i - 1];
-			const auto& idx2 = curvePointIndices[i];
-
-			const uint32_t capSize = static_cast<uint32_t>(idx1.size());
-			for (size_t j = 1; j < capSize; j++)
-			{
-				const uint32_t bl = idx1[j - 1];
-				const uint32_t br = idx1[j - 0];
-				const uint32_t tl = idx2[j - 1];
-				const uint32_t tr = idx2[j - 0];
-
-				geom.AddFace(tl, br, bl);
-				geom.AddFace(tl, tr, br);
-			}
-			if (hasInner && innerCurves.size() == curves.size())
-			{
-				const auto &ic1 = innerCurves[i - 1];
-				const auto &ic2 = innerCurves[i];
-				uint32_t innerCapSize = ic1.size();
-				for (size_t j = 1; j < innerCapSize; j++)
-				{
-					glm::dvec3 bl = ic1[j - 1];
-					glm::dvec3 br = ic1[j - 0];
-					glm::dvec3 tl = ic2[j - 1];
-					glm::dvec3 tr = ic2[j - 0];
-
-					geom.AddFace(tl, bl, br);
-					geom.AddFace(tl, br, tr);
-				}
-			}
-		}
-
-		if (cap && !closed && dpts.size() >= 2 && curves.size() >= 2)
-		{
-			glm::dvec3 startDir = glm::normalize(dpts[1] - dpts[0]);
-			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
-
-			double capEps = EPS_SMALL * scaling;
-			if (hasInner && innerCurves.size() == curves.size())
-			{
-				std::vector<std::vector<glm::dvec3>> startProfiles;
-				startProfiles.push_back(curves.front());
-				startProfiles.push_back(innerCurves.front());
-				std::vector<std::vector<glm::dvec3>> endProfiles;
-				endProfiles.push_back(curves.back());
-				endProfiles.push_back(innerCurves.back());
-				AddSweepCapWithHoles(geom, startProfiles, -startDir, capEps);
-				AddSweepCapWithHoles(geom, endProfiles, endDir, capEps);
-			}
-			else
-			{
-				AddSweepCap(geom, curves.front(), -startDir, capEps);
-				AddSweepCap(geom, curves.back(), endDir, capEps);
-			}
-		}
-
-		return geom;
-	}
+        // Close each circular contour explicitly; the curve sampler need not repeat
+        // its first point. Build inward-facing inner walls and annular end faces.
+        if (curves.size() < 2) return geom;
+        for (auto& ring : curves)
+            if (ring.size() > 1 && glm::distance(ring.front(), ring.back()) < EPS_SMALL)
+                ring.pop_back();
+        const size_t count = curves.front().size();
+        if (count < 3) return geom;
+        for (const auto& ring : curves) if (ring.size() != count) return geom;
+        if (closed && glm::distance(dpts.front(), dpts.back()) < EPS_SMALL)
+            curves.back() = curves.front();
+        auto inner = [&](size_t i, size_t j) {
+            return dpts[i] + (curves[i][j] - dpts[i]) * (innerRadius / radius);
+        };
+        auto face = [&](glm::dvec3 a, glm::dvec3 b, glm::dvec3 c, glm::dvec3 outward) {
+            if (glm::dot(glm::cross(b - a, c - a), outward) < 0) std::swap(b, c);
+            geom.AddFace(a, b, c);
+        };
+        for (size_t i = 1; i < curves.size(); ++i)
+        {
+            for (size_t j = 0; j < count; ++j)
+            {
+                const size_t k = (j + 1) % count;
+                const glm::dvec3 radial = (curves[i - 1][j] + curves[i - 1][k]) * 0.5 - dpts[i - 1];
+                face(curves[i - 1][j], curves[i - 1][k], curves[i][k], radial);
+                face(curves[i - 1][j], curves[i][k], curves[i][j], radial);
+                if (innerRadius > 0)
+                {
+                    face(inner(i - 1, j), inner(i - 1, k), inner(i, k), -radial);
+                    face(inner(i - 1, j), inner(i, k), inner(i, j), -radial);
+                }
+            }
+        }
+        if (!closed)
+        {
+            for (size_t i : {size_t(0), curves.size() - 1})
+            {
+                const glm::dvec3 normal = i == 0 ? dpts[0] - dpts[1] : dpts[i] - dpts[i - 1];
+                for (size_t j = 0; j < count; ++j)
+                {
+                    const size_t k = (j + 1) % count;
+                    if (innerRadius > 0)
+                    {
+                        face(curves[i][j], curves[i][k], inner(i, k), normal);
+                        face(curves[i][j], inner(i, k), inner(i, j), normal);
+                    }
+                    else face(dpts[i], curves[i][j], curves[i][k], normal);
+                }
+            }
+        }
+        return geom;
+    }
 
     // Each section contains an outer ring followed by its void boundaries.
     inline Geometry SectionedSurfaceRings(std::vector<std::vector<std::vector<glm::dvec3>>> sections, bool buildCaps, double eps = 0.0)

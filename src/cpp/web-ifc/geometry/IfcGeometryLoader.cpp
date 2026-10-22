@@ -1935,6 +1935,264 @@ namespace webifc::geometry
     return true;
   }
 
+  // Trim a curve whose segments are straight by their (uniform) segment index.
+  // Each segment occupies one unit of the parameter independently of its length.
+  static IfcCurve TrimCurveBySegmentIndex(const IfcCurve &source, std::optional<double> start, std::optional<double> end, uint32_t expressID)
+  {
+    IfcCurve result;
+    if (source.points.size() < 2) return result;
+    const double last = static_cast<double>(source.points.size() - 1);
+    // Exporters write the end of the full range with rounding noise (e.g. 2.0000000000000004
+    // for a two-edge polyline), so accept parameters within a small tolerance of the range.
+    const double tolerance = 1e-9 * std::max(1.0, last);
+    double firstParam = start.value_or(0.0), lastParam = end.value_or(last);
+    if (firstParam < -tolerance || lastParam > last + tolerance || firstParam >= lastParam)
+    {
+      spdlog::warn("[GetCurveWithParameters()] Parameters {}..{} outside curve {} (0..{}), using untrimmed curve", firstParam, lastParam, expressID, last);
+      return source;
+    }
+    firstParam = std::max(firstParam, 0.0);
+    lastParam = std::min(lastParam, last);
+    auto pointAt = [&](double parameter) {
+      const size_t i = std::min(static_cast<size_t>(parameter), source.points.size() - 2);
+      return glm::mix(source.points[i], source.points[i + 1], parameter - static_cast<double>(i));
+    };
+    result.Add(pointAt(firstParam));
+    for (size_t i = static_cast<size_t>(std::floor(firstParam)) + 1; i < source.points.size() && i < lastParam; ++i)
+      result.Add(source.points[i]);
+    result.Add(pointAt(lastParam));
+    return result;
+  }
+
+  // Trim a curve whose segments are not uniformly parameterized (e.g. an
+  // IFCINDEXEDPOLYCURVE with arc segments) by its total arc length. The
+  // parameters are fractions of the total length within [0, 1], so 0..1 sweeps
+  // the whole directrix and a strict sub-range produces a correct partial sweep.
+  // A degenerate trim falls back to the untrimmed curve instead of dropping it.
+  static IfcCurve TrimCurveByLengthFraction(const IfcCurve &source, std::optional<double> start, std::optional<double> end, uint32_t expressID)
+  {
+    IfcCurve result;
+    const auto &pts = source.points;
+    if (pts.size() < 2) return result;
+
+    std::vector<double> cumulative(pts.size(), 0.0);
+    for (size_t i = 1; i < pts.size(); ++i)
+      cumulative[i] = cumulative[i - 1] + glm::distance(pts[i - 1], pts[i]);
+    const double total = cumulative.back();
+    if (total <= 0) return result;
+
+    const double firstFrac = std::clamp(start.value_or(0.0), 0.0, 1.0);
+    const double lastFrac = std::clamp(end.value_or(1.0), 0.0, 1.0);
+    if (firstFrac >= lastFrac)
+    {
+      spdlog::warn("[GetCurveWithParameters()] Degenerate trim for curve {}, sweeping untrimmed curve", expressID);
+      return source;
+    }
+
+    const double firstLen = firstFrac * total;
+    const double lastLen = lastFrac * total;
+    auto pointAt = [&](double len) {
+      // upper_bound finds the first point beyond len, so len lies on the edge that ends there.
+      auto it = std::upper_bound(cumulative.begin(), cumulative.end(), len);
+      const size_t i = std::min(static_cast<size_t>(std::max<std::ptrdiff_t>(it - cumulative.begin(), 1) - 1), pts.size() - 2);
+      const double span = cumulative[i + 1] - cumulative[i];
+      const double t = span > 0 ? (len - cumulative[i]) / span : 0.0;
+      return glm::mix(pts[i], pts[i + 1], t);
+    };
+
+    result.Add(pointAt(firstLen));
+    for (size_t i = 0; i < pts.size(); ++i)
+      if (cumulative[i] > firstLen && cumulative[i] < lastLen) result.Add(pts[i]);
+    result.Add(pointAt(lastLen));
+    return result;
+  }
+
+  // Trim a polyline whose points carry increasing curve parameters. Positions between two points
+  // are interpolated linearly, which matches the tessellation of the curve.
+  static IfcCurve TrimCurveByParameters(const IfcCurve &source, const std::vector<double> &parameters, double start, double end)
+  {
+    IfcCurve result;
+    const auto &pts = source.points;
+    auto pointAt = [&](double parameter) {
+      auto it = std::upper_bound(parameters.begin(), parameters.end(), parameter);
+      const size_t i = std::min(static_cast<size_t>(std::max<std::ptrdiff_t>(it - parameters.begin(), 1) - 1), pts.size() - 2);
+      const double range = parameters[i + 1] - parameters[i];
+      const double t = range > 0 ? std::clamp((parameter - parameters[i]) / range, 0.0, 1.0) : 0.0;
+      return glm::mix(pts[i], pts[i + 1], t);
+    };
+    result.Add(pointAt(start));
+    for (size_t i = 0; i < pts.size(); ++i)
+      if (parameters[i] > start && parameters[i] < end) result.Add(pts[i]);
+    result.Add(pointAt(end));
+    return result;
+  }
+
+  // Parameter range of one composite curve segment: a polyline contributes one unit per edge,
+  // a trimmed line its parameter interval and a trimmed circle or ellipse its angle in the
+  // model's plane angle unit (ISO 10303-42 composite_curve parameterization).
+  bool IfcGeometryLoader::GetCompositeSegmentParameterSpan(uint32_t curveID, uint8_t dimensions, size_t pointCount, double &span) const
+  {
+    const auto type = _loader.GetLineType(curveID);
+    if (type == schema::IFCPOLYLINE)
+    {
+      _loader.MoveToArgumentOffset(curveID, 0);
+      const auto points = _loader.GetSetArgument();
+      if (points.size() < 2 || points.size() != pointCount) return false;
+      span = static_cast<double>(points.size() - 1);
+      return true;
+    }
+    if (type != schema::IFCTRIMMEDCURVE) return false;
+
+    _loader.MoveToArgumentOffset(curveID, 0);
+    const auto basisID = _loader.GetRefArgument();
+    auto trim1Set = _loader.GetSetArgument();
+    auto trim2Set = _loader.GetSetArgument();
+    const bool sameSense = _loader.GetStringArgument() == "T";
+    const auto trim1 = GetTrimSelect(dimensions, trim1Set);
+    const auto trim2 = GetTrimSelect(dimensions, trim2Set);
+    if (trim1.trimType != TRIM_BY_PARAMETER || trim2.trimType != TRIM_BY_PARAMETER) return false;
+
+    const auto basisType = _loader.GetLineType(basisID);
+    if (basisType == schema::IFCLINE)
+    {
+      span = std::abs(trim2.value - trim1.value);
+      return span > 0;
+    }
+    if (basisType != schema::IFCCIRCLE && basisType != schema::IFCELLIPSE) return false;
+
+    // Same normalization as ComputeCurve, so the span matches the generated arc.
+    const double scale = _cache.GetAngularScalingFactor();
+    if (!std::isfinite(scale) || scale <= 0) return false;
+    const double fullTurn = 2.0 * CONST_PI;
+    auto normalize = [&](double angle) {
+      while (angle < -fullTurn) angle += fullTurn;
+      while (angle > fullTurn) angle -= fullTurn;
+      return angle;
+    };
+    double startAngle = normalize(trim1.value * scale), endAngle = normalize(trim2.value * scale);
+    if (sameSense)
+    {
+      if (startAngle >= endAngle) endAngle += fullTurn;
+    }
+    else if (startAngle <= endAngle)
+    {
+      startAngle += fullTurn;
+    }
+    span = std::abs(endAngle - startAngle) / scale;
+    return span > 0;
+  }
+
+  // Tessellates a composite curve and records the curve parameter of every point. Returns false
+  // when a segment has no known parameterization.
+  bool IfcGeometryLoader::GetCompositeCurveParameters(uint32_t expressID, uint8_t dimensions, IfcCurve &curve, std::vector<double> &parameters) const
+  {
+    _loader.MoveToArgumentOffset(expressID, 0);
+    const auto segments = _loader.GetSetArgument();
+    std::vector<uint32_t> segmentIDs;
+    for (auto &segment : segments) segmentIDs.push_back(_loader.GetRefArgument(segment));
+
+    double base = 0;
+    for (const auto segmentID : segmentIDs)
+    {
+      if (_loader.GetLineType(segmentID) != schema::IFCCOMPOSITECURVESEGMENT) return false;
+      _loader.MoveToArgumentOffset(segmentID, 2);
+      const auto parentID = _loader.GetRefArgument();
+
+      IfcCurve segmentCurve;
+      ComputeCurveParams params;
+      params.dimensions = dimensions;
+      ComputeCurve(segmentID, segmentCurve, params);
+      const auto &pts = segmentCurve.points;
+      double span = 0;
+      if (pts.size() < 2 || !GetCompositeSegmentParameterSpan(parentID, dimensions, pts.size(), span)) return false;
+
+      // Polyline points are one unit apart and arcs are sampled at equal angles, so the
+      // parameter grows uniformly with the point index along the traversal.
+      for (size_t i = 0; i < pts.size(); ++i)
+      {
+        if (i == 0 && !curve.points.empty() && glm::distance(curve.points.back(), pts[0]) <= bimGeometry::EPS_TINY_CURVE) continue;
+        curve.Add(pts[i], false);
+        parameters.push_back(base + span * static_cast<double>(i) / static_cast<double>(pts.size() - 1));
+      }
+      base += span;
+    }
+    return curve.points.size() >= 2;
+  }
+
+  IfcCurve IfcGeometryLoader::GetCurveWithParameters(uint32_t expressID, uint8_t dimensions,
+      std::optional<double> start, std::optional<double> end) const
+  {
+    if (!start && !end) return GetCurve(expressID, dimensions);
+    const auto type = _loader.GetLineType(expressID);
+    IfcCurve result;
+    if ((start && !std::isfinite(*start)) || (end && !std::isfinite(*end))) return result;
+    if (type == schema::IFCPOLYLINE)
+    {
+      // Each polyline segment has a unit parameter interval, independently of its length.
+      auto source = GetCurve(expressID, dimensions);
+      return TrimCurveBySegmentIndex(source, start, end, expressID);
+    }
+    if (type == schema::IFCINDEXEDPOLYCURVE)
+    {
+      auto source = GetCurve(expressID, dimensions);
+      if (source.arcSegments.empty())
+      {
+        // Line-only indexed polycurve: behave like a polyline (uniform segments).
+        return TrimCurveBySegmentIndex(source, start, end, expressID);
+      }
+      // Arc segments have no defined per-segment parameterization, so trim by the
+      // arc-length fraction to keep partial sweeps correct instead of dropping them.
+      return TrimCurveByLengthFraction(source, start, end, expressID);
+    }
+    if (type == schema::IFCLINE || type == schema::IFCCIRCLE || type == schema::IFCELLIPSE)
+    {
+      if (type == schema::IFCLINE && (!start || !end || *start >= *end))
+      {
+        spdlog::error("[GetCurveWithParameters()] A line needs a finite increasing interval {}", expressID);
+        return result;
+      }
+      ComputeCurveParams params;
+      params.dimensions = dimensions;
+      params.hasTrim = true;
+      params.trimStart.trimType = params.trimEnd.trimType = TRIM_BY_PARAMETER;
+      params.trimStart.value = start.value_or(0.0);
+      params.trimEnd.value = end.value_or(2.0 * static_cast<double>(CONST_PI) / _cache.GetAngularScalingFactor());
+      if (type != schema::IFCLINE)
+      {
+        const double period = 2.0 * static_cast<double>(CONST_PI) / _cache.GetAngularScalingFactor();
+        if (!std::isfinite(period) || period <= 0) return result;
+        const double span = params.trimEnd.value - params.trimStart.value;
+        params.trimStart.value = std::fmod(params.trimStart.value, period);
+        params.trimEnd.value = std::fmod(params.trimEnd.value, period);
+        if (params.trimEnd.value == params.trimStart.value && span != 0)
+          params.trimEnd.value = params.trimStart.value + period;
+      }
+      ComputeCurve(expressID, result, params);
+      return result;
+    }
+    if (type == schema::IFCCOMPOSITECURVE)
+    {
+      IfcCurve source;
+      std::vector<double> parameters;
+      if (GetCompositeCurveParameters(expressID, dimensions, source, parameters))
+      {
+        const double total = parameters.back();
+        const double tolerance = 1e-9 * std::max(1.0, total);
+        const double first = start.value_or(0.0), last = end.value_or(total);
+        if (first >= -tolerance && last <= total + tolerance && first < last)
+        {
+          return TrimCurveByParameters(source, parameters, std::max(first, 0.0), std::min(last, total));
+        }
+        spdlog::warn("[GetCurveWithParameters()] Parameters {}..{} outside composite curve {} (0..{}), using untrimmed curve", first, last, expressID, total);
+        return GetCurve(expressID, dimensions);
+      }
+    }
+    // No supported parameterization for this curve type: rather than dropping the
+    // solid entirely, sweep the untrimmed curve and warn so the caller can detect it.
+    spdlog::warn("[GetCurveWithParameters()] Unsupported parameter trimming for curve {} (type {}), using untrimmed curve", expressID, type);
+    return GetCurve(expressID, dimensions);
+  }
+
   void IfcGeometryLoader::ComputeCurve(uint32_t expressID, IfcCurve &curve, const ComputeCurveParams& params) const
   {
     spdlog::debug("[ComputeCurve({})]", expressID);
@@ -1967,10 +2225,6 @@ namespace webifc::geometry
     }
     case schema::IFCCOMPOSITECURVE:
     {
-        // IfcCompositeCurve
-        //      std::vector<IfcSegment>			Segments;
-        //      IfcLogical						SelfIntersect;
-
       _loader.MoveToArgumentOffset(expressID, 0);
       auto segments = _loader.GetSetArgument();
       auto selfIntersects = _loader.GetStringArgument();
