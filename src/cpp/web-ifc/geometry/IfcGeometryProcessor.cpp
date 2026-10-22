@@ -836,7 +836,6 @@ namespace webifc::geometry
             }
             case schema::IFCSURFACECURVESWEPTAREASOLID:
             {
-
                 // TODO: closed sweeps not implemented
                 // TODO: the plane is not being used now
 
@@ -908,7 +907,7 @@ namespace webifc::geometry
 
                 std::reverse(profile.curve.points.begin(), profile.curve.points.end());
 
-                IfcGeometry geom = Sweep(_cache.GetLinearScalingFactor(), closed, profile, directrix, surface.normal(), true, true, true);
+                IfcGeometry geom = Sweep(_cache.GetLinearScalingFactor(), closed, profile, directrix, surface.normal(), true);
 
                 mesh.transformation = placement;
                 _expressIDToGeometry[expressID] = geom;

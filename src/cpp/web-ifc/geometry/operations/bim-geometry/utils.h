@@ -854,9 +854,6 @@ namespace bimGeometry
 		directrixSegmentNormal = n1;
 	}
 
-	inline void AddSweepCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps);
-	inline void AddSweepCapWithHoles(Geometry &geom, const std::vector<std::vector<glm::dvec3>> &profiles, const glm::dvec3 &normalWanted, const double eps);
-
 	inline std::vector<glm::vec<3, glm::f64>> BuildSweepDirectrixPoints(const std::vector<glm::dvec3> &directrix, const double scaling, const bool optimize)
 	{
 		std::vector<glm::vec<3, glm::f64>> dpts;
@@ -877,101 +874,6 @@ namespace bimGeometry
 			}
 		}
 		return dpts;
-	}
-
-	inline std::vector<Curve> BuildSweepCurves(const std::vector<glm::vec<3, glm::f64>> &dpts, const bool closed, const std::vector<glm::dvec3> &profilePoints, const glm::dvec3 &initialDirectrixNormal, const bool rotate90)
-	{
-		std::vector<Curve> curves;
-
-		for (size_t i = 0; i < dpts.size(); i++)
-		{
-			Curve segmentForCurve;
-
-			glm::dvec3 planeNormal;
-			glm::dvec3 directrixSegmentNormal;
-			glm::dvec3 planeOrigin;
-
-			if (i == 0) // start
-			{
-				planeNormal = glm::normalize(dpts[1] - dpts[0]);
-				directrixSegmentNormal = planeNormal;
-				planeOrigin = dpts[0];
-			}
-			else if (i == dpts.size() - 1) // end
-			{
-				planeNormal = glm::normalize(dpts[i] - dpts[i - 1]);
-				directrixSegmentNormal = planeNormal;
-				planeOrigin = dpts[i];
-			}
-			else // middle
-			{
-				ResolveSweepFrameMiddle(dpts[i - 1], dpts[i], dpts[i + 1], planeNormal, directrixSegmentNormal);
-				planeOrigin = dpts[i];
-			}
-
-			if (curves.empty())
-			{
-				// construct initial curve
-				glm::dvec3 left;
-				glm::dvec3 right;
-				if (initialDirectrixNormal == glm::dvec3(0))
-				{
-					left = glm::cross(directrixSegmentNormal, glm::dvec3(directrixSegmentNormal.y, directrixSegmentNormal.x, directrixSegmentNormal.z));
-					if (left == glm::dvec3(0, 0, 0))
-					{
-						left = glm::cross(directrixSegmentNormal, glm::dvec3(directrixSegmentNormal.x, directrixSegmentNormal.z, directrixSegmentNormal.y));
-					}
-					if (left == glm::dvec3(0, 0, 0))
-					{
-						left = glm::cross(directrixSegmentNormal, glm::dvec3(directrixSegmentNormal.z, directrixSegmentNormal.y, directrixSegmentNormal.x));
-					}
-					right = glm::normalize(glm::cross(directrixSegmentNormal, left));
-					left = glm::normalize(glm::cross(directrixSegmentNormal, right));
-				}
-				else
-				{
-					left = glm::cross(directrixSegmentNormal, initialDirectrixNormal);
-					glm::dvec3 side = glm::normalize(initialDirectrixNormal);
-					right = glm::normalize(glm::cross(directrixSegmentNormal, left));
-					left = glm::normalize(glm::cross(directrixSegmentNormal, right));
-					right *= side;
-				}
-
-				// project profile onto planeNormal, place on planeOrigin
-				auto &ppts = profilePoints;
-				for (auto &pt2D : ppts)
-				{
-					glm::dvec3 pt = -pt2D.x * left + -pt2D.y * right + planeOrigin;
-					if (rotate90)
-					{
-						pt = -pt2D.x * right - pt2D.y * left + planeOrigin;
-					}
-					glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
-
-					segmentForCurve.Add(proj);
-				}
-			}
-			else
-			{
-				// project previous curve onto the normal
-				const Curve &prevCurve = curves.back();
-
-				auto &ppts = prevCurve.points;
-				for (auto &pt : ppts)
-				{
-					glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
-
-					segmentForCurve.Add(proj);
-				}
-			}
-
-			if (!closed || (i != 0 && i != dpts.size() - 1))
-			{
-				curves.push_back(segmentForCurve);
-			}
-		}
-
-		return curves;
 	}
 
 	inline void ConnectSweepCurves(Geometry &geom, const std::vector<glm::dvec3> &c1, const std::vector<glm::dvec3> &c2, const bool invertWinding)
@@ -1001,32 +903,42 @@ namespace bimGeometry
 	//! This implementation generates much more vertices than needed, and does not have smoothed normals
 	// TODO: Review rotate90 value, as it should be inferred from IFC but the source data had not been identified yet
 	// An arbitrary value has been added in IFCSURFACECURVESWEPTAREASOLID but this is a bad solution
-	inline Geometry SweepFunction(const double scaling, const bool closed, const std::vector<std::vector<glm::dvec3>> &profiles, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true, const bool cap = false)
+	//! profile[0] is the outer contour, profile[1..] are holes (e.g. from IfcCircleHollowProfileDef)
+	inline Geometry SweepFunction(const double scaling, const bool closed, const std::vector<std::vector<glm::dvec3>> &profile, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true)
 	{
 		Geometry geom;
 
-		if (profiles.empty())
-		{
-			return geom;
-		}
+		std::vector<glm::vec<3, glm::f64>> dpts;
 
-		std::vector<glm::vec<3, glm::f64>> dpts = BuildSweepDirectrixPoints(directrix, scaling, optimize);
-		std::vector<glm::vec<3, glm::f64>> dptsForCurves = dpts;
+		// Remove repeated points
+		for (size_t i = 0; i < directrix.size(); i++)
+		{
+			if (i < directrix.size() - 1)
+			{
+				if (glm::distance(directrix[i], directrix[i + 1]) > EPS_BIG2 * scaling || !optimize)
+				{
+					dpts.push_back(directrix[i]);
+				}
+			}
+			else
+			{
+				dpts.push_back(directrix[i]);
+			}
+		}
 
 		if (dpts.size() < 2) return geom;
 		if (closed)
 		{
+			glm::vec<3, glm::f64> dirStart = dpts[dpts.size() - 2] - dpts[dpts.size() - 1];
+			glm::vec<3, glm::f64> dirEnd = dpts[1] - dpts[0];
 			std::vector<glm::vec<3, glm::f64>> newDpts;
-			newDpts.reserve(dptsForCurves.size() + 2);
-			glm::vec<3, glm::f64> dirStart = dptsForCurves[dptsForCurves.size() - 2] - dptsForCurves[dptsForCurves.size() - 1];
-			glm::vec<3, glm::f64> dirEnd = dptsForCurves[1] - dptsForCurves[0];
-			newDpts.push_back(dptsForCurves[0] + dirStart);
-			for (size_t i = 0; i < dptsForCurves.size(); i++)
+			newDpts.push_back(dpts[0] + dirStart);
+			for (size_t i = 0; i < dpts.size(); i++)
 			{
-				newDpts.push_back(dptsForCurves[i]);
+				newDpts.push_back(dpts[i]);
 			}
-			newDpts.push_back(dptsForCurves[dptsForCurves.size() - 1] + dirEnd);
-			dptsForCurves = newDpts;
+			newDpts.push_back(dpts[dpts.size() - 1] + dirEnd);
+			dpts = newDpts;
 		}
 
 		if (dpts.size() <= 1)
@@ -1035,77 +947,231 @@ namespace bimGeometry
 			return geom;
 		}
 
-		std::vector<std::vector<Curve>> profileCurves;
-		profileCurves.reserve(profiles.size());
-		for (const auto &profilePoints : profiles)
+		// cap normals for open sweeps (dpts is unmodified when not closed)
+		glm::dvec3 startNormal(0);
+		glm::dvec3 endNormal(0);
+		if (!closed)
 		{
-			profileCurves.push_back(BuildSweepCurves(dptsForCurves, closed, profilePoints, initialDirectrixNormal, rotate90));
+			startNormal = -glm::normalize(dpts[1] - dpts[0]);
+			endNormal = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
+		}
+
+		// compute the swept curve of each profile ring for each part of the directrix
+		std::vector<std::vector<Curve>> curves; // curves[i][r]: ring r at directrix point i
+
+		for (size_t i = 0; i < dpts.size(); i++)
+		{
+			glm::dvec3 planeNormal;
+			glm::dvec3 directrixSegmentNormal;
+			glm::dvec3 planeOrigin;
+
+			if (i == 0) // start
+			{
+				planeNormal = glm::normalize(dpts[1] - dpts[0]);
+				directrixSegmentNormal = planeNormal;
+				planeOrigin = dpts[0];
+			}
+			else if (i == dpts.size() - 1) // end
+			{
+				planeNormal = glm::normalize(dpts[i] - dpts[i - 1]);
+				directrixSegmentNormal = planeNormal;
+				planeOrigin = dpts[i];
+			}
+			else // middle
+			{
+				// possibly the directrix is bad
+				glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
+				glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
+				glm::dvec3 p = glm::normalize(glm::cross(n1, n2));
+
+				// double prod = glm::dot(n1, n2);
+
+				if (std::isnan(p.x))
+				{
+					// TODO: sometimes outliers cause the perp to become NaN!
+					// this is bad news, as it nans the points added to the final mesh
+					// also, it's hard to bail out now :/
+					// see curve.add() for more info on how this is currently "solved"
+				}
+
+				glm::dvec3 u1 = glm::normalize(glm::cross(n1, p));
+				glm::dvec3 u2 = glm::normalize(glm::cross(n2, p));
+
+				// TODO: When n1 and n2 have similar direction but opposite side...
+				// ... projection tend to infinity. -> glm::dot(n1, n2)
+				// I implemented a bad solution to prevent projection to infinity
+				if (glm::dot(n1, n2) < -0.9)
+				{
+					n2 = -n2;
+					u2 = -u2;
+				}
+
+				glm::dvec3 au = glm::normalize(u1 + u2);
+				planeNormal = glm::normalize(glm::cross(au, p));
+				directrixSegmentNormal = n1; // n1 or n2 doesn't matter
+
+				planeOrigin = dpts[i];
+			}
+
+			std::vector<Curve> curvesAtPoint(profile.size());
+
+			if (curves.empty())
+			{
+				// construct initial curve
+				glm::dvec3 left;
+				glm::dvec3 right;
+				if (initialDirectrixNormal == glm::dvec3(0))
+				{
+					left = glm::cross(directrixSegmentNormal, glm::dvec3(directrixSegmentNormal.y, directrixSegmentNormal.x, directrixSegmentNormal.z));
+					if (left == glm::dvec3(0, 0, 0))
+					{
+						left = glm::cross(directrixSegmentNormal, glm::dvec3(directrixSegmentNormal.x, directrixSegmentNormal.z, directrixSegmentNormal.y));
+					}
+					if (left == glm::dvec3(0, 0, 0))
+					{
+						left = glm::cross(directrixSegmentNormal, glm::dvec3(directrixSegmentNormal.z, directrixSegmentNormal.y, directrixSegmentNormal.x));
+					}
+					right = glm::normalize(glm::cross(directrixSegmentNormal, left));
+					left = glm::normalize(glm::cross(directrixSegmentNormal, right));
+				}
+				else
+				{
+					left = glm::cross(directrixSegmentNormal, initialDirectrixNormal);
+					glm::dvec3 side = glm::normalize(initialDirectrixNormal);
+					right = glm::normalize(glm::cross(directrixSegmentNormal, left));
+					left = glm::normalize(glm::cross(directrixSegmentNormal, right));
+					right *= side;
+				}
+
+				// project the profile rings onto planeNormal, place on planeOrigin
+				for (size_t r = 0; r < profile.size(); r++)
+				{
+					auto &ppts = profile[r];
+					for (auto &pt2D : ppts)
+					{
+						glm::dvec3 pt = -pt2D.x * left + -pt2D.y * right + planeOrigin;
+						if (rotate90)
+						{
+							pt = -pt2D.x * right - pt2D.y * left + planeOrigin;
+						}
+						glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
+
+						curvesAtPoint[r].Add(proj);
+					}
+				}
+			}
+			else
+			{
+				// project previous curves onto the normal
+				const std::vector<Curve> &prevCurves = curves.back();
+
+				for (size_t r = 0; r < prevCurves.size(); r++)
+				{
+					auto &ppts = prevCurves[r].points;
+					for (auto &pt : ppts)
+					{
+						glm::dvec3 proj = bimGeometry::projectOntoPlane(planeOrigin, planeNormal, pt, directrixSegmentNormal);
+
+						curvesAtPoint[r].Add(proj);
+					}
+				}
+			}
+
+			if (!closed || (i != 0 && i != dpts.size() - 1))
+			{
+				curves.push_back(curvesAtPoint);
+			}
+		}
+
+		if (closed)
+		{
+			dpts.pop_back();
+			dpts.erase(dpts.begin());
 		}
 
 		// connect the curves
 		for (size_t i = 1; i < dpts.size(); i++)
 		{
-			for (size_t profileIndex = 0; profileIndex < profileCurves.size(); profileIndex++)
-			{
-				const auto &curves = profileCurves[profileIndex];
-				if (curves.size() <= i)
-				{
-					continue;
-				}
+			glm::dvec3 p1 = dpts[i - 1];
+			glm::dvec3 p2 = dpts[i];
 
-				const auto &c1 = curves[i - 1].points;
-				const auto &c2 = curves[i].points;
-				const bool invertWinding = profileIndex > 0;
-				ConnectSweepCurves(geom, c1, c2, invertWinding);
+			const auto &c1 = curves[i - 1];
+			const auto &c2 = curves[i];
+
+			for (size_t r = 0; r < c1.size(); r++)
+			{
+				const auto &ring1 = c1[r].points;
+				const auto &ring2 = c2[r].points;
+
+				uint32_t capSize = ring1.size();
+				for (size_t j = 1; j < capSize; j++)
+				{
+					glm::dvec3 bl = ring1[j - 1];
+					glm::dvec3 br = ring1[j - 0];
+
+					glm::dvec3 tl = ring2[j - 1];
+					glm::dvec3 tr = ring2[j - 0];
+
+					geom.AddFace(tl, br, bl);
+					geom.AddFace(tl, tr, br);
+				}
 			}
 		}
 
-		if (cap && !closed && dpts.size() >= 2)
+		// add caps to open sweeps
+		if (!closed)
 		{
-			glm::dvec3 startDir = glm::normalize(dpts[1] - dpts[0]);
-			glm::dvec3 endDir = glm::normalize(dpts[dpts.size() - 1] - dpts[dpts.size() - 2]);
-			double capEps = EPS_SMALL * scaling;
+			// triangulate a cap (outer ring + holes) with earcut
+			auto AddCap = [&](const std::vector<Curve> &rings, const glm::dvec3 &normal)
+			{
+				uint32_t offset = geom.numPoints;
+				std::vector<std::vector<Point>> polygon(rings.size());
 
-			if (profileCurves.size() == 1)
-			{
-				const auto &curves = profileCurves.front();
-				if (curves.size() >= 2)
+				for (size_t r = 0; r < rings.size(); r++)
 				{
-					AddSweepCap(geom, curves.front().points, -startDir, capEps);
-					AddSweepCap(geom, curves.back().points, endDir, capEps);
-				}
-			}
-			else
-			{
-				std::vector<std::vector<glm::dvec3>> startProfiles;
-				std::vector<std::vector<glm::dvec3>> endProfiles;
-				startProfiles.reserve(profileCurves.size());
-				endProfiles.reserve(profileCurves.size());
-				for (const auto &curves : profileCurves)
-				{
-					if (curves.empty())
+					const auto &ring = rings[r].points;
+					for (const auto &pt : ring)
 					{
-						startProfiles.emplace_back();
-						endProfiles.emplace_back();
-						continue;
+						geom.AddPoint(pt, normal);
+						polygon[r].push_back(Point{pt.x, pt.y, pt.z});
 					}
-					startProfiles.push_back(curves.front().points);
-					endProfiles.push_back(curves.back().points);
 				}
 
-				AddSweepCapWithHoles(geom, startProfiles, -startDir, capEps);
-				AddSweepCapWithHoles(geom, endProfiles, endDir, capEps);
-			}
+				Projection proj = bestProjection(polygon[0]);
+				auto polygon2D = projectTo2D(polygon, proj);
+				std::vector<uint32_t> indices = mapbox::earcut<uint32_t>(polygon2D);
+
+				bool flipWinding = false;
+				if (indices.size() >= 3)
+				{
+					glm::dvec3 a = geom.GetPoint(offset + indices[0]);
+					glm::dvec3 b = geom.GetPoint(offset + indices[1]);
+					glm::dvec3 c = geom.GetPoint(offset + indices[2]);
+					glm::dvec3 triNormal = glm::cross(b - a, c - a);
+					if (glm::dot(triNormal, normal) < 0)
+					{
+						flipWinding = true;
+					}
+				}
+
+				for (size_t i = 0; i < indices.size(); i += 3)
+				{
+					if (flipWinding)
+					{
+						geom.AddFace(offset + indices[i + 0], offset + indices[i + 2], offset + indices[i + 1], -1);
+					}
+					else
+					{
+						geom.AddFace(offset + indices[i + 0], offset + indices[i + 1], offset + indices[i + 2], -1);
+					}
+				}
+			};
+
+			AddCap(curves[0], startNormal);
+			AddCap(curves[curves.size() - 1], endNormal);
 		}
 
 		return geom;
-	}
-
-	inline Geometry SweepFunction(const double scaling, const bool closed, const std::vector<glm::dvec3> &profilePoints, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const bool optimize = true, const bool cap = false)
-	{
-		std::vector<std::vector<glm::dvec3>> profiles;
-		profiles.push_back(profilePoints);
-		return SweepFunction(scaling, closed, profiles, directrix, initialDirectrixNormal, rotate90, optimize, cap);
 	}
 
 	inline void AddSweepCapWithHoles(Geometry &geom, const std::vector<std::vector<glm::dvec3>> &profiles, const glm::dvec3 &normalWanted, const double eps)
@@ -1201,13 +1267,6 @@ namespace bimGeometry
 			}
 			geom.AddFace(capProfile[i0], capProfile[i1], capProfile[i2]);
 		}
-	}
-
-	inline void AddSweepCap(Geometry &geom, const std::vector<glm::dvec3> &curve, const glm::dvec3 &normalWanted, const double eps)
-	{
-		std::vector<std::vector<glm::dvec3>> profiles;
-		profiles.push_back(curve);
-		AddSweepCapWithHoles(geom, profiles, normalWanted, eps);
 	}
 
 	inline Geometry SweepCircular(const double scaling, const bool closed, const std::vector<glm::dvec3> &profile, const double radius, const std::vector<glm::dvec3> &directrix, const glm::dvec3 &initialDirectrixNormal = glm::dvec3(0), const bool rotate90 = false, const double innerRadius = 0)
