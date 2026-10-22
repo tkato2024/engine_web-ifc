@@ -2355,8 +2355,14 @@ namespace webifc::geometry
 
           if (params.ignorePlacement)
           {
-              vector = glm::dvec3(1, 0, 0);
+              // Parameter trims are scaled by the IfcVector magnitude; length trims are not.
+              const double magnitude = params.trimStart.trimType == TRIM_BY_PARAMETER ? glm::length(vector) : 1.0;
+              vector = glm::dvec3(magnitude, 0, 0);
               placement = glm::dvec3(0, 0, 0);
+          }
+          else if (params.trimStart.trimType == TRIM_BY_LENGTH && glm::length(vector) > 1e-12)
+          {
+              vector = glm::normalize(vector);
           }
           if (condition)
           {
@@ -3025,11 +3031,6 @@ namespace webifc::geometry
       segmentParams.edge = false;
       segmentParams.sameSense = -1;
       segmentParams.trimSense = trimSense;
-
-      if (expressID == 192475)
-      {
-          int wait = 0;
-}
 
       ComputeCurve(ParentCurveID, curve, segmentParams);
       
