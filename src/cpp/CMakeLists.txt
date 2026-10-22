@@ -36,7 +36,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 # download the external projects and save their paths
 Message("Downloading FastFloat")
-FetchContent_Declare(fastfloat GIT_REPOSITORY "https://github.com/fastfloat/fast_float" GIT_TAG "f3f02c8ad0afd8181166dabce6a9e69f8aec24de" SOURCE_SUBDIR "../")
+FetchContent_Declare(fastfloat GIT_REPOSITORY "https://github.com/fastfloat/fast_float" GIT_TAG "42f254836ee416ffcf2f4e6576260003ac33d48c" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(fastfloat)
 
 Message("Downloading TinyNURBS")
@@ -52,11 +52,11 @@ FetchContent_Declare(glm GIT_REPOSITORY "https://github.com/g-truc/glm" GIT_TAG 
 FetchContent_MakeAvailable(glm)
 
 Message("Downloading Earcut")
-FetchContent_Declare(earcut GIT_REPOSITORY "https://github.com/mapbox/earcut.hpp" GIT_TAG "c68c8835ccff2b7532d31d8fa8dfcf398f629498" SOURCE_SUBDIR "../")
+FetchContent_Declare(earcut GIT_REPOSITORY "https://github.com/mapbox/earcut.hpp" GIT_TAG "92acda9e2ed96ff1f910cda35de444727e9da7b0" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(earcut)
 
 Message("Downloading CDT")
-FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "2068d015b9db3c92481e869b0c1f669b96a1d70a" SOURCE_SUBDIR "../")
+FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "53eff288a4e77ad1c0afe1a10f60bd2b57f877b8" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(cdt)
 
 Message("Downloading spdlog")
@@ -68,7 +68,7 @@ FetchContent_Declare(stduuid GIT_REPOSITORY "https://github.com/mariusbancila/st
 FetchContent_MakeAvailable(stduuid)
 
 Message("Downloading unordered_dense")
-FetchContent_Declare(unordered_dense GIT_REPOSITORY "https://github.com/martinus/unordered_dense" GIT_TAG "1c8636e810d7e4a485d17bb9cbd6dccb5fe4e284" SOURCE_SUBDIR "../")
+FetchContent_Declare(unordered_dense GIT_REPOSITORY "https://github.com/martinus/unordered_dense" GIT_TAG "ddd49116e63be7345b448351cad153653a712fdb" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(unordered_dense)
 
 Message("Downloads Finished")
