@@ -1013,6 +1013,7 @@ namespace bimGeometry
 		std::vector<glm::vec<3, glm::f64>> dpts = BuildSweepDirectrixPoints(directrix, scaling, optimize);
 		std::vector<glm::vec<3, glm::f64>> dptsForCurves = dpts;
 
+		if (dpts.size() < 2) return geom;
 		if (closed)
 		{
 			std::vector<glm::vec<3, glm::f64>> newDpts;
@@ -1232,6 +1233,7 @@ namespace bimGeometry
 			}
 		}
 
+		if (dpts.size() < 2) return geom;
 		if (closed)
 		{
 			glm::vec<3, glm::f64> dirStart = dpts[dpts.size() - 2] - dpts[dpts.size() - 1];
