@@ -499,13 +499,13 @@ namespace webifc::parsing {
       return GetStringArgument();
    }
 
-   long IfcLoader::GetIntArgument() const
+   int64_t IfcLoader::GetIntArgument() const
    {
        std::string_view str = GetStringArgument();
        return std::stoll(std::string(str));
    }
 
-  long IfcLoader::GetIntArgument(const uint32_t tapeOffset) const
+  int64_t IfcLoader::GetIntArgument(const uint32_t tapeOffset) const
   {
     _tokenStream->MoveTo(tapeOffset);
     return GetIntArgument();
