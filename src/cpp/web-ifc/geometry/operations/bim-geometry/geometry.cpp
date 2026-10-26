@@ -211,7 +211,7 @@ namespace bimGeometry
 
                     glm::dvec3 norm;
 
-                    if (computeSafeNormal(a, b, c, norm, EPS_SMALL))
+                    if (computeSafeNormal(a, b, c, norm, EPS_BIG))
                     {
                         // Prefer the face normal shared by all three vertices (set per source face
                         // when triangulating bounds) over the noise-sensitive triangle normal.

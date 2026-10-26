@@ -184,7 +184,7 @@ namespace fuzzybools
             // check dir
             Vec3 unitDir = glm::normalize(dir);
             Vec3 unitDirection = glm::normalize(direction);
-            if (!(equals(unitDir, unitDirection, EPS_SMALL) || equals(unitDir, -unitDirection, EPS_SMALL)))
+            if (!(equals(unitDir, unitDirection, EPS_BIG) || equals(unitDir, -unitDirection, EPS_BIG)))
             {
                 return false;
             }
@@ -462,7 +462,7 @@ namespace fuzzybools
             glm::dvec3 worldUp = glm::dvec3(0, 1, 0);
             glm::dvec3 worldRight = glm::dvec3(1, 0, 0);
 
-            bool normalIsUp = equals(up, worldUp, EPS_SMALL) || equals(-up, worldUp, EPS_SMALL);
+            bool normalIsUp = equals(up, worldUp, EPS_BIG) || equals(-up, worldUp, EPS_BIG);
             glm::dvec3 left = normalIsUp ? glm::cross(up, worldRight) : glm::cross(up, worldUp);
             glm::dvec3 right = glm::cross(left, up);
 
@@ -853,7 +853,7 @@ namespace fuzzybools
         {
             Vec3 temp(-1.0, -1.0, -1.0);
             Vec3 norm = glm::normalize(temp);
-            computeSafeNormal(points[tri.a].location3D, points[tri.b].location3D, points[tri.c].location3D, norm, EPS_SMALL);
+            computeSafeNormal(points[tri.a].location3D, points[tri.b].location3D, points[tri.c].location3D, norm, EPS_BIG);
             return norm;
         }
 
@@ -1031,7 +1031,7 @@ namespace fuzzybools
 #endif
 
                 Vec3 norm;
-                if (computeSafeNormal(a, b, c, norm, EPS_SMALL))
+                if (computeSafeNormal(a, b, c, norm, EPS_BIG))
                 {
                     double rs = glm::dot(geom.planes[f.pId].normal, norm);
 

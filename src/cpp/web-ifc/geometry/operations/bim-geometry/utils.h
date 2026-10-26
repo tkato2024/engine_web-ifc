@@ -1247,12 +1247,12 @@ namespace bimGeometry
         // its first point. Build inward-facing inner walls and annular end faces.
         if (curves.size() < 2) return geom;
         for (auto& ring : curves)
-            if (ring.size() > 1 && glm::distance(ring.front(), ring.back()) < EPS_SMALL)
+            if (ring.size() > 1 && glm::distance(ring.front(), ring.back()) < EPS_BIG)
                 ring.pop_back();
         const size_t count = curves.front().size();
         if (count < 3) return geom;
         for (const auto& ring : curves) if (ring.size() != count) return geom;
-        if (closed && glm::distance(dpts.front(), dpts.back()) < EPS_SMALL)
+        if (closed && glm::distance(dpts.front(), dpts.back()) < EPS_BIG)
             curves.back() = curves.front();
         auto inner = [&](size_t i, size_t j) {
             return dpts[i] + (curves[i][j] - dpts[i]) * (innerRadius / radius);

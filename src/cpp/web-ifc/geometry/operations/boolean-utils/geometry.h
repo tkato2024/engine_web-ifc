@@ -274,7 +274,7 @@ namespace fuzzybools
 				glm::dvec3 norm;
 
 				//				if (computeSafeNormal(a, b, c, norm))
-				if (computeSafeNormal(a, b, c, norm, EPS_SMALL))
+				if (computeSafeNormal(a, b, c, norm, EPS_BIG))
 				{
 					double area = areaOfTriangle(a, b, c);
 					double height = glm::dot(norm, a);
