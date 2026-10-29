@@ -549,14 +549,9 @@ IFC_SCHEMA IfcLoader::GetSchema() const
       ++_revision;
       const auto lineIt = _lines.find(expressID);
       if (lineIt == _lines.end()) return;
-
       _referrerIndexes.clear();
-      const auto typeIt = _ifcTypeToExpressID.find(lineIt->second.ifcType);
-      if (typeIt != _ifcTypeToExpressID.end())
-      {
-        std::erase(typeIt->second, expressID);
-      }
-      _lines.erase(expressID);
+      std::erase(_ifcTypeToExpressID[lineIt->second.ifcType], expressID);
+      _lines.erase(lineIt);
   }
   
   void IfcLoader::UpdateLineTape(const uint32_t expressID, const uint32_t type, const uint32_t start)

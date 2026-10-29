@@ -897,35 +897,12 @@ namespace bimGeometry
 			}
 			else // middle
 			{
-				// possibly the directrix is bad
-				glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
-				glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
-				glm::dvec3 p = glm::normalize(glm::cross(n1, n2));
-
-				// double prod = glm::dot(n1, n2);
-
-				if (std::isnan(p.x) || glm::length(glm::cross(n1, n2)) <= EPS_MINISCULE)
-				{
-					// Collinear segments do not bend here, so any axis perpendicular to the directrix
-					// works and the section plane stays normal to it (otherwise every point turns NaN)
-					p = glm::normalize(glm::cross(n1, std::abs(n1.z) < 0.9 ? glm::dvec3(0, 0, 1) : glm::dvec3(1, 0, 0)));
-				}
-
-				glm::dvec3 u1 = glm::normalize(glm::cross(n1, p));
-				glm::dvec3 u2 = glm::normalize(glm::cross(n2, p));
-
-				// TODO: When n1 and n2 have similar direction but opposite side...
-				// ... projection tend to infinity. -> glm::dot(n1, n2)
-				// I implemented a bad solution to prevent projection to infinity
-				if (glm::dot(n1, n2) < -0.9)
-				{
-					n2 = -n2;
-					u2 = -u2;
-				}
-
-				glm::dvec3 au = glm::normalize(u1 + u2);
-				planeNormal = glm::normalize(glm::cross(au, p));
-				directrixSegmentNormal = n1; // n1 or n2 doesn't matter
+				const glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
+				const glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
+				// A reversal has no finite miter plane. Collinear forward segments do.
+				if (glm::dot(n1, n2) < -COPLANAR_MIN_COS) return geom;
+				planeNormal = glm::normalize(n1 + n2);
+				directrixSegmentNormal = n1;
 
 				planeOrigin = dpts[i];
 			}
@@ -1164,7 +1141,7 @@ namespace bimGeometry
                 const glm::dvec3 n1 = glm::normalize(dpts[i] - dpts[i - 1]);
                 const glm::dvec3 n2 = glm::normalize(dpts[i + 1] - dpts[i]);
                 // A reversal has no finite miter plane. Collinear forward segments do.
-                if (glm::dot(n1, n2) < -0.999999) return geom;
+                if (glm::dot(n1, n2) < -COPLANAR_MIN_COS) return geom;
                 planeNormal = glm::normalize(n1 + n2);
                 directrixSegmentNormal = n1;
 				planeOrigin = dpts[i];
