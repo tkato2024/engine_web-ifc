@@ -33,7 +33,6 @@ namespace webifc::cache
     _expressIDToPlacement.clear();
     _cartesianPoint3DCache.clear();
     _cartesianPoint2DCache.clear();
-    _directionCache.clear();
   }
 
   ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> IfcCache::PopulateRelVoidsMap()
@@ -502,10 +501,6 @@ namespace webifc::cache
 
   ankerl::unordered_dense::map<uint32_t, glm::dvec2> &IfcCache::GetCartesianPoint2DCache() {
     return _cartesianPoint2DCache;
-  }
-
-  ankerl::unordered_dense::map<uint32_t, glm::dvec3> &IfcCache::GetDirectionCache() {
-    return _directionCache;
   }
 
   ankerl::unordered_dense::map<uint32_t, glm::dmat4> &IfcCache::GetExpressIDToPlacement() {

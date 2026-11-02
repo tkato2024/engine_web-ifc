@@ -33,7 +33,6 @@ namespace webifc::cache
     std::vector<uint32_t> &GetLocalCurvesIndices();
     ankerl::unordered_dense::map<uint32_t, glm::dvec3> &GetCartesianPoint3DCache();
     ankerl::unordered_dense::map<uint32_t, glm::dvec2> &GetCartesianPoint2DCache();
-    ankerl::unordered_dense::map<uint32_t, glm::dvec3> &GetDirectionCache();
     ankerl::unordered_dense::map<uint32_t, glm::dmat4> &GetExpressIDToPlacement();
     double GetLinearScalingFactor() const;
     double GetAngularScalingFactor() const;
@@ -59,7 +58,6 @@ namespace webifc::cache
     std::vector<uint32_t> _localcurvesIndices;
     ankerl::unordered_dense::map<uint32_t, glm::dvec3> _cartesianPoint3DCache;
     ankerl::unordered_dense::map<uint32_t, glm::dvec2> _cartesianPoint2DCache;
-    ankerl::unordered_dense::map<uint32_t, glm::dvec3> _directionCache;
     ankerl::unordered_dense::map<uint32_t, glm::dmat4> _expressIDToPlacement;
     //helper methods
     double ReadLenghtMeasure() const;
