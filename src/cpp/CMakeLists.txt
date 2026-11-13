@@ -56,7 +56,7 @@ FetchContent_Declare(earcut GIT_REPOSITORY "https://github.com/mapbox/earcut.hpp
 FetchContent_MakeAvailable(earcut)
 
 Message("Downloading CDT")
-FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "53eff288a4e77ad1c0afe1a10f60bd2b57f877b8" SOURCE_SUBDIR "../")
+FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "b4413ee44affb489099ed4d6ec65e94788cb6708" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(cdt)
 
 Message("Downloading spdlog")
@@ -194,9 +194,20 @@ if(NOT EMSCRIPTEN)
 	)
 
 	# build parameters for web-ifc-test
-	add_executable(web-ifc-test ${web-ifc-source} "./test/encoding_test.cpp" "./test/schema_type_metadata_test.cpp" "./test/main.cpp" "./test/io_helpers.cpp" "./test/get_schema_test.cpp" "./test/malformed_input_test.cpp" "./test/surface_curve_swept_area_test.cpp")
+	add_executable(web-ifc-test ${web-ifc-source}
+		"./test/main.cpp"
+		"./test/io_helpers.cpp"
+		"./test/encoding_test.cpp"
+		"./test/get_schema_test.cpp"
+		"./test/issue65_material_test.cpp"
+		"./test/malformed_input_test.cpp"
+		"./test/schema_type_metadata_test.cpp"
+		"./test/surface_curve_swept_area_test.cpp"
+		"./test/touching_face_bounds_test.cpp"
+	)
 	param_setter(web-ifc-test)
 	target_include_directories(web-ifc-test PUBLIC ${tinycpptest_SOURCE_DIR}/Sources)
+	target_compile_definitions(web-ifc-test PRIVATE WEB_IFC_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/functional/fixtures")
 
 	add_test(web-ifc-test web-ifc-test)
 	set_tests_properties(web-ifc-test PROPERTIES LABELS "web-ifc")
