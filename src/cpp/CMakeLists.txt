@@ -36,7 +36,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 # download the external projects and save their paths
 Message("Downloading FastFloat")
-FetchContent_Declare(fastfloat GIT_REPOSITORY "https://github.com/fastfloat/fast_float" GIT_TAG "42f254836ee416ffcf2f4e6576260003ac33d48c" SOURCE_SUBDIR "../")
+FetchContent_Declare(fastfloat GIT_REPOSITORY "https://github.com/fastfloat/fast_float" GIT_TAG "dbeabeeb3e6791cb96994c2a7a084c36e62ccfb2" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(fastfloat)
 
 Message("Downloading TinyNURBS")
@@ -194,7 +194,7 @@ if(NOT EMSCRIPTEN)
 	)
 
 	# build parameters for web-ifc-test
-	add_executable(web-ifc-test ${web-ifc-source} "./test/encoding_test.cpp" "./test/schema_type_metadata_test.cpp" "./test/main.cpp" "./test/io_helpers.cpp" "./test/get_schema_test.cpp")
+	add_executable(web-ifc-test ${web-ifc-source} "./test/encoding_test.cpp" "./test/schema_type_metadata_test.cpp" "./test/main.cpp" "./test/io_helpers.cpp" "./test/get_schema_test.cpp" "./test/malformed_input_test.cpp" "./test/surface_curve_swept_area_test.cpp")
 	param_setter(web-ifc-test)
 	target_include_directories(web-ifc-test PUBLIC ${tinycpptest_SOURCE_DIR}/Sources)
 
