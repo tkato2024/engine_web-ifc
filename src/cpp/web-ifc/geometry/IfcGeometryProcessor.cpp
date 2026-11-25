@@ -14,7 +14,7 @@
 
 #include "IfcGeometryProcessor.h"
 
-// Enable the N-ary DIFFERENCE flatten optimization for the Tekla coplanar-cut
+// Enable the N-ary DIFFERENCE flatten optimization for the coplanar-cut
 // pattern (model 1092: naked -47%, non-manifold -63%). Gated internally to all-
 // extrusion, same-direction, non-faceted cutter chains so it can't touch the
 // cases it doesn't help. Comment this line out to fall back to nested subtraction.
@@ -321,6 +321,37 @@ namespace webifc::geometry
         _skipVoids = skipVoids;
     }
 
+    bool IfcGeometryProcessor::GetSweptDiskAxis(uint32_t expressID, IfcCurve &directrix, double &radius, double &innerRadius)
+    {
+        if (!_loader.IsValidExpressID(expressID) || _loader.GetLineType(expressID) != schema::IFCSWEPTDISKSOLID) return false;
+        _loader.MoveToArgumentOffset(expressID, 0);
+        auto directrixRef = _loader.GetRefArgument();
+
+        radius = _loader.GetDoubleArgument();
+        innerRadius = 0.0;
+
+        if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
+        {
+            _loader.StepBack();
+            innerRadius = _loader.GetDoubleArgument();
+        }
+
+        std::optional<double> startParam, endParam;
+        if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
+        {
+            _loader.StepBack();
+            startParam = _loader.GetDoubleArgument();
+        }
+        if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
+        {
+            _loader.StepBack();
+            endParam = _loader.GetDoubleArgument();
+        }
+
+        directrix = _geometryLoader.GetCurveWithParameters(directrixRef, 3, startParam, endParam);
+        return directrix.points.size() >= 2;
+    }
+
     IfcComposedMesh IfcGeometryProcessor::GetMesh(uint32_t expressID)
     {
         const auto lineType = _loader.GetLineType(expressID);
@@ -546,7 +577,7 @@ namespace webifc::geometry
                 uint32_t firstOperandID = _loader.GetRefArgument();
                 uint32_t secondOperandID = _loader.GetRefArgument();
 
-                // DEEP-CHAIN FLATTEN (fixes #1197; also helps deep-chain #1774/#1999): Tekla/Revit
+                // DEEP-CHAIN FLATTEN (fixes #1197; also helps deep-chain #1774/#1999): some exporters
                 // emit (((base - c1) - c2) - ... - cn) as a spine of nested clippings. Processing it
                 // recursively re-runs a full CSG pass per level over the growing result -> ~O(n^2),
                 // which hangs (#1197: StreamAllMeshesWithTypes never completes; 35 half-space clips)
@@ -739,7 +770,7 @@ namespace webifc::geometry
                 }
 
 #ifdef NARY_UNION
-                // N-ARY DIFFERENCE for the Tekla coplanar-cut pattern (model 1092): a
+                // N-ARY DIFFERENCE for the coplanar-cut pattern (model 1092): a
                 // pure-DIFFERENCE spine of EXTRUSION cutters over an EXTRUSION base.
                 // Subtracting coaxial/coplanar extrusions one-by-one piles faces on
                 // shared planes, which CDT then drops (naked edges). Flattening the whole
@@ -791,7 +822,7 @@ namespace webifc::geometry
 
                 // Only fuse when the flatten actually helps: the coplanar-cut pattern has
                 // every direct-extrusion cutter sharing the base extrusion's direction
-                // (Tekla emits one IfcDirection reused by base + cutts => coaxial/coplanar
+                // (the exporter emits one IfcDirection reused by base + cutts => coaxial/coplanar
                 // walls). Cutters extruded along OTHER directions (e.g. 1194 #424) don't
                 // pile on shared planes, so the one-pass flatten only makes them slightly
                 // worse; leave those on the nested baseline. Boolean-result cutters have no
@@ -1414,32 +1445,10 @@ namespace webifc::geometry
                 // TODO: prevent self intersections in Sweep function still not working properly
                 bool closed = false;
 
-                _loader.MoveToArgumentOffset(expressID, 0);
-                auto directrixRef = _loader.GetRefArgument();
-
-                double radius = _loader.GetDoubleArgument();
+                IfcCurve directrix;
+                double radius = 0.0;
                 double innerRadius = 0.0;
-
-                if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
-                {
-                    _loader.StepBack();
-                    innerRadius = _loader.GetDoubleArgument();
-                }
-
-                std::optional<double> startParam, endParam;
-                if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
-                {
-                    _loader.StepBack();
-                    startParam = _loader.GetDoubleArgument();
-                }
-                if (_loader.GetTokenType() == parsing::IfcTokenType::REAL)
-                {
-                    _loader.StepBack();
-                    endParam = _loader.GetDoubleArgument();
-                }
-
-                IfcCurve directrix = _geometryLoader.GetCurveWithParameters(directrixRef, 3, startParam, endParam);
-                if (directrix.points.size() < 2) return mesh;
+                if (!GetSweptDiskAxis(expressID, directrix, radius, innerRadius)) return mesh;
                 closed = directrix.points.size() > 2 && glm::distance(directrix.points.front(), directrix.points.back()) < EPS_SMALL;
 
                 IfcProfile profile;
