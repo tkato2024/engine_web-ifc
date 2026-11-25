@@ -1021,7 +1021,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
       case IfcTokenType::REAL:
       case IfcTokenType::INTEGER:
       {
-        uint16_t length = _tokenStream->Read<uint16_t>();
+        size_t length = _tokenStream->ReadLength(t);
         _tokenStream->Forward(length);
         return;
       }

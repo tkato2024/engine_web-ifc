@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 
+#include "../web-ifc/parsing/IfcLineWriter.h"
 #include "../web-ifc/parsing/IfcLoader.h"
 #include "../web-ifc/schema/IfcSchemaManager.h"
 
@@ -27,6 +28,22 @@ ENDSEC;
 DATA;
 )IFC") + "#20=IFCBLOBTEXTURE(.T.,.T.,$,$,$,'PNG'," + literal + ");\n" +
            "#21=IFCLABEL('after');\n" +
+           R"IFC(ENDSEC;
+END-ISO-10303-21;
+)IFC";
+}
+
+std::string BuildModelWithPropertyValue(const std::string &value)
+{
+    return std::string(R"IFC(ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [ReferenceView_V1.2]'),'2;1');
+FILE_NAME('t.ifc','2026-10-25T00:00:00',('x'),('x'),'hand-written STEP','x','');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+)IFC") + "#20=IFCPROPERTYSINGLEVALUE('p',$," + value + ",#30);\n" +
+           "#30=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);\n" +
            R"IFC(ENDSEC;
 END-ISO-10303-21;
 )IFC";
@@ -76,4 +93,42 @@ TEST(MalformedBinaryLiteralStillRejected)
     bool loaded = true;
     MakeLoader(BuildModelWithBinaryLiteral("\"0G\""), schemaManager, &loaded);
     ASSERT_EQ(loaded, false);
+}
+
+// The arguments after a binary literal keep their positions when the referrers of a line are collected.
+TEST(ReferrersAfterBinaryLiteralKeepArgumentIndex)
+{
+    std::string blob = "0";
+    for (int i = 0; i < 35000; ++i) blob += "AB";
+    webifc::schema::IfcSchemaManager schemaManager;
+    bool loaded = false;
+    auto loader = MakeLoader(BuildModelWithPropertyValue("\"" + blob + "\""), schemaManager, &loaded);
+    ASSERT_EQ(loaded, true);
+
+    const auto referrers = loader.GetReferrers(30);
+    ASSERT_EQ(referrers.size(), size_t(1));
+    ASSERT_EQ(referrers[0].expressID, uint32_t(20));
+    ASSERT_EQ(referrers[0].argumentIndex, uint16_t(3));
+}
+
+// Updating other arguments of a line keeps its binary literal unchanged.
+TEST(SetArgumentsKeepsBinaryLiteral)
+{
+    std::string blob = "0";
+    for (int i = 0; i < 35000; ++i) blob += "AB";
+    webifc::schema::IfcSchemaManager schemaManager;
+    bool loaded = false;
+    auto loader = MakeLoader(BuildModelWithPropertyValue("IFCBINARY(\"" + blob + "\")"), schemaManager, &loaded);
+    ASSERT_EQ(loaded, true);
+
+    webifc::parsing::SetArguments(loader, 20, {{0, webifc::parsing::ArgumentValue::String{"q"}}});
+
+    loader.MoveToLineArgument(20, 0);
+    ASSERT_EQ(std::string(loader.GetStringArgument()) == "q", true);
+    loader.MoveToLineArgument(20, 2);
+    ASSERT_EQ(std::string(loader.GetStringArgument()) == "IFCBINARY", true);
+    ASSERT_EQ(loader.GetTokenType() == webifc::parsing::IfcTokenType::SET_BEGIN, true);
+    ASSERT_EQ(std::string(loader.GetBinaryArgument()) == blob, true);
+    ASSERT_EQ(loader.GetTokenType() == webifc::parsing::IfcTokenType::SET_END, true);
+    ASSERT_EQ(loader.GetRefArgument(), uint32_t(30));
 }
