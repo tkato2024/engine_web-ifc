@@ -57,7 +57,7 @@ FetchContent_Declare(earcut GIT_REPOSITORY "https://github.com/mapbox/earcut.hpp
 FetchContent_MakeAvailable(earcut)
 
 Message("Downloading CDT")
-FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "b4413ee44affb489099ed4d6ec65e94788cb6708" SOURCE_SUBDIR "../")
+FetchContent_Declare(cdt GIT_REPOSITORY "https://github.com/artem-ogre/CDT" GIT_TAG "d66c2024ea3d7f06dca22bcbea93a8d5211ef5fb" SOURCE_SUBDIR "../")
 FetchContent_MakeAvailable(cdt)
 
 Message("Downloading spdlog")
@@ -235,8 +235,10 @@ if(NOT EMSCRIPTEN)
 		"./test/main.cpp"
 		"./test/io_helpers.cpp"
 		"./test/encoding_test.cpp"
+		"./test/binary_literal_test.cpp"
 		"./test/get_schema_test.cpp"
 		"./test/issue65_material_test.cpp"
+		"./test/issue533_annotation_curve3d_test.cpp"
 		"./test/malformed_input_test.cpp"
 		"./test/schema_type_metadata_test.cpp"
 		"./test/surface_curve_swept_area_test.cpp"

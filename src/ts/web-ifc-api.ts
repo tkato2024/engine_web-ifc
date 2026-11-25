@@ -60,9 +60,25 @@ export const SET_END = 8;
 export const LINE_END = 9;
 export const INTEGER = 10;
 /** STEP binary literal contents, including the unused-bit prefix (0-3).
- * Up to 65535 characters; lowercase hex is accepted and saved as uppercase.
+ * Up to 2^32-1 characters; lowercase hex is accepted and saved as uppercase.
  */
 export const BINARY = 11;
+
+/**
+ * PlacedGeometry.geomType value for a regular triangle mesh.
+ */
+export const GEOM_TRIANGLES = 0;
+/**
+ * PlacedGeometry.geomType value for wireframe geometry (IfcPolyline,
+ * IfcIndexedPolyCurve, IfcCircle, IfcEdge, ...): the vertices form a connected
+ * polyline strip that has to be drawn with line primitives instead of triangles.
+ */
+export const GEOM_LINE_STRIP = 1;
+/**
+ * PlacedGeometry.geomType value for independent points (IfcCartesianPoint and
+ * IfcCartesianPointList representation items): draw with point primitives.
+ */
+export const GEOM_POINTS = 2;
 
 /**
  * Settings for the IFCLoader
@@ -78,6 +94,7 @@ export const BINARY = 11;
  * @property {number} TOLERANCE_SCALAR_EQUALITY - Tolerance used to compare scalar values as equal.
  * @property {number} PLANE_REFIT_ITERATIONS - Number of iterations used when adjusting triangles to a plane.
  * @property {number} BOOLEAN_UNION_THRESHOLD - Minimum number of solids before triggering a boolean union operation.
+ * @property {boolean} EXPORT_POLYLINES - Export wireframe (curve/point) geometry of products without solid geometry. Defaults to false.
  */
 export interface LoaderSettings {
   /** Allow best-effort parsing of older/preview schemas using incompatible generated layouts.
@@ -97,6 +114,14 @@ export interface LoaderSettings {
   TOLERANCE_SCALAR_EQUALITY?: number;
   PLANE_REFIT_ITERATIONS?: number;
   BOOLEAN_UNION_THRESHOLD?: number;
+  /**
+   * Export wireframe (curve/point) geometry of products that carry no solid
+   * geometry at all, e.g. IfcAnnotation Curve3D representations, IfcGrid or
+   * IfcGeometricCurveSet (defaults to false). Products that also carry solid
+   * geometry keep exporting triangles only. Set to true to also receive
+   * wireframe geometry.
+   */
+  EXPORT_POLYLINES?: boolean;
 }
 
 export interface Vector<T> extends Iterable<T> {
@@ -122,6 +147,12 @@ export interface PlacedGeometry {
   /** False when neither the element nor any of its sub-items carries an IFC
    * style; color is then a neutral default rather than a material. */
   hasColor: boolean;
+  /**
+   * GEOM_TRIANGLES (0), GEOM_LINE_STRIP (1) or GEOM_POINTS (2). Non-triangle
+   * geometry is only produced for products whose representation contains no
+   * solid or face geometry (e.g. IfcAnnotation Curve3D representations).
+   */
+  geomType: number;
   geometryExpressID: number;
   flatTransformation: Array<number>;
 }
@@ -342,6 +373,32 @@ export interface ProfileSection {
   ): void;
 }
 
+/** A plane through `point` with normal `normal` (see SectionMesh / GetSection). */
+export interface SectionPlane {
+  point: ArrayLike<number>;
+  normal: ArrayLike<number>;
+}
+
+export interface SectionOptions {
+  /** distance under which two cut points are the same point */
+  weld?: number;
+  /** largest gap closed between the ends of chains that do not close (0 = never) */
+  closeGap?: number;
+}
+
+export interface SectionResult {
+  /** x, y, z per cap vertex */
+  capPositions: Float64Array;
+  /** 3 per cap triangle */
+  capIndices: Uint32Array;
+  /** x1, y1, z1, x2, y2, z2 per cut segment */
+  lines: Float64Array;
+  closedLoops: number;
+  closedByGap: number;
+  openChains: number;
+  earcutFailures: number;
+}
+
 export interface IfcType {
   typeID: number;
   typeName: string;
@@ -527,6 +584,7 @@ export class IfcAPI {
       TOLERANCE_SCALAR_EQUALITY: 1.0e-4,
       PLANE_REFIT_ITERATIONS: 1,
       BOOLEAN_UNION_THRESHOLD: 150,
+      EXPORT_POLYLINES: false,
       ...settings,
     };
     return s;
@@ -1670,6 +1728,65 @@ export class IfcAPI {
     (globalThis as any).__morphBool = fn || undefined;
   }
   private booleanFallbackChosen = false;
+
+  /**
+   * Section of one triangle mesh by a plane: the cut lines and the cut area (cap), triangulated. The mesh is not
+   * modified (hiding the part in front of the plane is up to the viewer, e.g. a clipping plane).
+   * Tolerant of real-world meshes: flipped triangles do not matter, loops are nested by containment (holes are
+   * kept), chains that do not close are closed when their ends are nearer than `closeGap`, and whatever stays
+   * open is returned as lines only (counted in `openChains`).
+   * @param positions x, y, z per vertex (any frame, any units)
+   * @param indices 3 per triangle
+   * @param plane the plane, through `point` with normal `normal`, in the same frame as the positions
+   * @param options weld: distance under which two cut points are the same (default 1e-6); closeGap: largest gap
+   * closed between the ends of open chains (default 0 = never)
+   * @returns capPositions (x, y, z) + capIndices, lines (x1, y1, z1, x2, y2, z2 per segment) and counters
+   */
+  SectionMesh(positions: ArrayLike<number>, indices: ArrayLike<number>, plane: SectionPlane, options: SectionOptions = {}): SectionResult {
+    const p = [plane.point[0], plane.point[1], plane.point[2], plane.normal[0], plane.normal[1], plane.normal[2]];
+    return this.wasmModule.SectionMesh(positions, indices, p, options.weld ?? 1e-6, options.closeGap ?? 0) as SectionResult;
+  }
+
+  /**
+   * Section (or floor plan, with a horizontal plane) of a whole model: every element whose geometry the plane
+   * crosses, cut as one mesh (all its pieces, placed). Coordinates are web-ifc's model frame (Y up, metres when
+   * applyLinearScalingFactor is true, the same frame as StreamAllMeshes + flatTransformation).
+   * @param modelID Model handle retrieved by OpenModel
+   * @param plane the plane, in the model frame
+   * @param options see SectionMesh (default weld 1e-5, closeGap 1e-3 here: model units after scaling)
+   * @returns one entry per element crossed, with its expressID and the colour of its first piece
+   */
+  GetSection(modelID: number, plane: SectionPlane, options: SectionOptions = {}): Array<SectionResult & { expressID: number, color: Color }> {
+    const opts = { weld: options.weld ?? 1e-5, closeGap: options.closeGap ?? 1e-3 };
+    const n = plane.normal, len = Math.hypot(n[0], n[1], n[2]) || 1;
+    const nn = [n[0] / len, n[1] / len, n[2] / len];
+    const out: Array<SectionResult & { expressID: number, color: Color }> = [];
+    this.StreamAllMeshes(modelID, (mesh: FlatMesh) => {
+      const pos: number[] = [], idx: number[] = [];
+      let below = false, above = false, color: Color | null = null;
+      for (let i = 0; i < mesh.geometries.size(); i++) {
+        const pg = mesh.geometries.get(i);
+        const g = this.GetGeometry(modelID, pg.geometryExpressID);
+        const v = this.GetVertexArray(g.GetVertexData(), g.GetVertexDataSize());
+        const ix = this.GetIndexArray(g.GetIndexData(), g.GetIndexDataSize());
+        g.delete();
+        const m = pg.flatTransformation, base = pos.length / 3;
+        if (!color) color = pg.color;
+        for (let k = 0; k < v.length; k += 6) {
+          const x = v[k], y = v[k + 1], z = v[k + 2];
+          const X = m[0] * x + m[4] * y + m[8] * z + m[12], Y = m[1] * x + m[5] * y + m[9] * z + m[13], Z = m[2] * x + m[6] * y + m[10] * z + m[14];
+          const d = (X - plane.point[0]) * nn[0] + (Y - plane.point[1]) * nn[1] + (Z - plane.point[2]) * nn[2];
+          if (d < 0) below = true; else if (d > 0) above = true;
+          pos.push(X, Y, Z);
+        }
+        for (let k = 0; k < ix.length; k++) idx.push(ix[k] + base);
+      }
+      if (!below || !above) return;                       // the plane does not cross this element
+      const r = this.SectionMesh(pos, idx, plane, opts);
+      if (r.lines.length) out.push(Object.assign(r, { expressID: mesh.expressID, color: color as Color }));
+    });
+    return out;
+  }
 
   /**
    * Encodes test using IFC Encoding

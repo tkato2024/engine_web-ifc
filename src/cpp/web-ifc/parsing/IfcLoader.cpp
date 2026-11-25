@@ -223,7 +223,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
             }
             case IfcTokenType::BINARY:
             {
-              output << '\"' << _tokenStream->ReadString() << '\"';
+              output << '\"' << _tokenStream->ReadBinaryString() << '\"';
               break;
             }
             case IfcTokenType::STRING:
@@ -381,7 +381,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
           case IfcTokenType::INTEGER:
   				case IfcTokenType::ENUM:
   				{
-  					auto size = _tokenStream->Read<uint16_t>();
+  					auto size = _tokenStream->ReadLength(t);
             _tokenStream->Forward(size);
   					break;
   				}
@@ -461,6 +461,12 @@ IFC_SCHEMA IfcLoader::GetSchema() const
    { 
    	 _tokenStream->Read<char>(); // string type
      return _tokenStream->ReadString();
+   }
+
+   std::string_view IfcLoader::GetBinaryArgument() const
+   {
+   	 _tokenStream->Read<char>(); // binary type
+     return _tokenStream->ReadBinaryString();
    }
 
    std::string IfcLoader::GetDecodedStringArgument() const
@@ -694,7 +700,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
          case IfcTokenType::LABEL:
          case IfcTokenType::ENUM: {
              tapeOffsets.push_back(offset);
-             uint16_t length = _tokenStream->Read<uint16_t>();
+             size_t length = _tokenStream->ReadLength(t);
              _tokenStream->Forward(length);
              break;
          }
@@ -761,7 +767,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
      			}
 			else if (t == IfcTokenType::BINARY || t == IfcTokenType::STRING || t == IfcTokenType::INTEGER || t == IfcTokenType::REAL || t == IfcTokenType::LABEL || t == IfcTokenType::ENUM)
      			{
-     				uint16_t length = _tokenStream->Read<uint16_t>();
+     				size_t length = _tokenStream->ReadLength(t);
      				_tokenStream->Forward(length);
      			}
      			else
@@ -833,7 +839,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
       case IfcTokenType::INTEGER:
       case IfcTokenType::REAL:
    		{
-   			uint16_t length = _tokenStream->Read<uint16_t>();
+   			size_t length = _tokenStream->ReadLength(t);
    			_tokenStream->Forward(length);
    			break;
    		}
@@ -877,7 +883,7 @@ IFC_SCHEMA IfcLoader::GetSchema() const
 
         }
         if (t == IfcTokenType::BINARY || t == IfcTokenType::STRING || t == IfcTokenType::INTEGER || t == IfcTokenType::REAL || t == IfcTokenType::LABEL || t == IfcTokenType::ENUM) {
-          uint16_t length = _tokenStream->Read<uint16_t>();
+          size_t length = _tokenStream->ReadLength(t);
           _tokenStream->Forward(length);
           noArguments++;
           if (t==IfcTokenType::LABEL) GetSetArgument();
