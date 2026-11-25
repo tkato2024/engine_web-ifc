@@ -243,6 +243,13 @@ namespace webifc::parsing
         append<uint32_t>(out, loader.GetRefArgument());
         return;
       case IfcTokenType::BINARY:
+      {
+        loader.StepBack();
+        const std::string_view payload = loader.GetBinaryArgument();
+        append<BinaryLength>(out, static_cast<BinaryLength>(payload.size()));
+        appendBytes(out, payload);
+        return;
+      }
       case IfcTokenType::STRING:
       case IfcTokenType::LABEL:
       case IfcTokenType::ENUM:

@@ -28,6 +28,7 @@
 #include "../web-ifc/geometry/operations/bim-geometry/boolean.h"
 #include "../web-ifc/geometry/operations/bim-geometry/profile.h"
 #include "../web-ifc/parsing/string_parsing.h"
+#include "../web-ifc/geometry/operations/section.h"
 
 namespace webifc::parsing
 {
@@ -642,7 +643,7 @@ bool WriteValue(uint32_t modelID, webifc::parsing::IfcTokenType t, emscripten::v
         if (!IsBinaryValue(value)) return false;
         std::string text = value.as<std::string>();
         std::transform(text.begin(), text.end(), text.begin(), webifc::parsing::CanonicalBinaryDigit);
-        loader->Push<uint16_t>(static_cast<uint16_t>(text.size()));
+        loader->Push<webifc::parsing::BinaryLength>(static_cast<webifc::parsing::BinaryLength>(text.size()));
         loader->Push((void*)text.data(), text.size());
         break;
     }
@@ -845,7 +846,7 @@ bool WriteHeaderLine(uint32_t modelID, uint32_t type, emscripten::val parameters
         return false;
     if (!ValidateBinaryArguments(parameters))
     {
-        spdlog::error("Invalid STEP binary value: expected a hex string with valid padding, at most 65535 characters");
+        spdlog::error("Invalid STEP binary value: expected a hex string with valid padding");
         return false;
     }
     if (!ValidateIntegerArguments(parameters))
@@ -883,7 +884,7 @@ bool WriteLine(uint32_t modelID, uint32_t expressID, uint32_t type, emscripten::
         return false;
     if (!ValidateBinaryArguments(parameters))
     {
-        spdlog::error("Invalid STEP binary value: expected a hex string with valid padding, at most 65535 characters");
+        spdlog::error("Invalid STEP binary value: expected a hex string with valid padding");
         return false;
     }
     if (!ValidateIntegerArguments(parameters))
@@ -923,7 +924,7 @@ emscripten::val ReadValue(uint32_t modelID, webifc::parsing::IfcTokenType t)
     switch (t)
     {
     case webifc::parsing::IfcTokenType::BINARY:
-        return emscripten::val(std::string(loader->GetStringArgument()));
+        return emscripten::val(std::string(loader->GetBinaryArgument()));
     case webifc::parsing::IfcTokenType::STRING:
     {
         return emscripten::val(loader->GetDecodedStringArgument());
@@ -1211,6 +1212,29 @@ bimGeometry::Profile CreateProfile()
     return bimGeometry::Profile();
 }
 
+// Section of one mesh by a plane (see section.h). positions: x, y, z per vertex (any array of numbers);
+// indices: 3 per triangle; plane: [px, py, pz, nx, ny, nz]. Returns arrays owned by JS.
+emscripten::val SectionMesh(emscripten::val positions, emscripten::val indices, emscripten::val plane, double weld, double closeGap)
+{
+    const std::vector<double> pos = emscripten::convertJSArrayToNumberVector<double>(positions);
+    const std::vector<uint32_t> idx = emscripten::convertJSArrayToNumberVector<uint32_t>(indices);
+    const std::vector<double> pl = emscripten::convertJSArrayToNumberVector<double>(plane);
+    emscripten::val o = emscripten::val::object();
+    if (pl.size() < 6)
+        return o;
+    const webifc::geometry::SectionResult r = webifc::geometry::SectionMesh(pos, idx, glm::dvec3(pl[0], pl[1], pl[2]), glm::dvec3(pl[3], pl[4], pl[5]), weld, closeGap);
+    static const emscripten::val Float64Array = emscripten::val::global("Float64Array");
+    static const emscripten::val Uint32Array = emscripten::val::global("Uint32Array");
+    o.set("capPositions", Float64Array.new_(emscripten::typed_memory_view(r.capPositions.size(), r.capPositions.data())));
+    o.set("capIndices", Uint32Array.new_(emscripten::typed_memory_view(r.capIndices.size(), r.capIndices.data())));
+    o.set("lines", Float64Array.new_(emscripten::typed_memory_view(r.lines.size(), r.lines.data())));
+    o.set("closedLoops", r.closedLoops);
+    o.set("closedByGap", r.closedByGap);
+    o.set("openChains", r.openChains);
+    o.set("earcutFailures", r.earcutFailures);
+    return o;
+}
+
 EMSCRIPTEN_BINDINGS(my_module)
 {
 
@@ -1240,7 +1264,8 @@ EMSCRIPTEN_BINDINGS(my_module)
         .field("TOLERANCE_INSIDE_OUTSIDE_PERIMETER", &webifc::manager::LoaderSettings::TOLERANCE_INSIDE_OUTSIDE_PERIMETER)
         .field("TOLERANCE_SCALAR_EQUALITY", &webifc::manager::LoaderSettings::TOLERANCE_SCALAR_EQUALITY)
         .field("PLANE_REFIT_ITERATIONS", &webifc::manager::LoaderSettings::PLANE_REFIT_ITERATIONS)
-        .field("BOOLEAN_UNION_THRESHOLD", &webifc::manager::LoaderSettings::BOOLEAN_UNION_THRESHOLD);
+        .field("BOOLEAN_UNION_THRESHOLD", &webifc::manager::LoaderSettings::BOOLEAN_UNION_THRESHOLD)
+        .field("EXPORT_POLYLINES", &webifc::manager::LoaderSettings::EXPORT_POLYLINES);
 
     emscripten::value_array<std::array<double, 16>>("array_double_16")
         .element(emscripten::index<0>())
@@ -1263,6 +1288,7 @@ EMSCRIPTEN_BINDINGS(my_module)
     emscripten::value_object<webifc::geometry::IfcPlacedGeometry>("IfcPlacedGeometry")
         .field("color", &webifc::geometry::IfcPlacedGeometry::color)
         .field("hasColor", &webifc::geometry::IfcPlacedGeometry::hasColor)
+        .field("geomType", &webifc::geometry::IfcPlacedGeometry::geomType)
         .field("flatTransformation", &webifc::geometry::IfcPlacedGeometry::flatTransformation)
         .field("geometryExpressID", &webifc::geometry::IfcPlacedGeometry::geometryExpressID);
 
@@ -1459,4 +1485,5 @@ EMSCRIPTEN_BINDINGS(my_module)
     emscripten::function("DecodeText", &DecodeText);
     emscripten::function("EncodeText", &EncodeText);
     emscripten::function("GenerateGuid", &GenerateGuid);
+    emscripten::function("SectionMesh", &SectionMesh);
 }

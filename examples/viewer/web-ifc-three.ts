@@ -3,9 +3,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
  
 import * as THREE from "three";
-import { IfcAPI, ms, PlacedGeometry, Color, FlatMesh, IFCSITE } from "../../dist/web-ifc-api";
+import { IfcAPI, ms, PlacedGeometry, Color, FlatMesh, IFCSITE, GEOM_LINE_STRIP, GEOM_POINTS } from "../../dist/web-ifc-api";
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
   
+/** One element in the model frame (Y up), for sections: positions x, y, z; indices 3 per triangle; its bounding box. */
+export interface SectionElement {
+    expressID: number;
+    positions: Float32Array;
+    indices: Uint32Array;
+    color: Color;
+    min: number[];
+    max: number[];
+}
+
 export class IfcThree
 {
     private ifcAPI: IfcAPI;
@@ -18,6 +28,13 @@ export class IfcThree
      * unstyled roofs, windows, doors etc. should look.
      */
     public unstyledColorProvider?: (mesh: FlatMesh, placedGeometry: PlacedGeometry) => Color | null | undefined;
+
+    /**
+     * Every element loaded, as one mesh in the model frame (all its pieces placed), kept for sections and floor
+     * plans after the model is closed. Cleared by ClearSectionElements().
+     */
+    public sectionElements: SectionElement[] = [];
+    public ClearSectionElements() { this.sectionElements = []; }
 
     /**
         Creates an instance of IfcThree, requires a valid instance of IfcAPI
@@ -48,26 +65,43 @@ export class IfcThree
 
         let geometries = [];
         let transparentGeometries = [];
+        let lineGeometries = [];
+        let pointGeometries = [];
 
         this.ifcAPI.StreamAllMeshes(modelID, (mesh: FlatMesh) => {
             // only during the lifetime of this function call, the geometry is available in memory
             const placedGeometries = mesh.geometries;
+            const parts: THREE.BufferGeometry[] = [];
+            let firstColor: Color | null = null;
 
             for (let i = 0; i < placedGeometries.size(); i++)
             {
                 const placedGeometry = placedGeometries.get(i);
                 const color = this.resolveColor(mesh, placedGeometry);
+                if (!firstColor) firstColor = color;
                 const placedMesh = this.getPlacedGeometry(modelID, placedGeometry, color);
                 let geom = placedMesh.geometry.applyMatrix4(placedMesh.matrix);
-                if (color.w !== 1)
+                // sections are triangle-based, so only surface geometry is kept for them
+                if (placedGeometry.geomType === GEOM_LINE_STRIP)
                 {
+                    lineGeometries.push(this.toLineSegments(geom));
+                }
+                else if (placedGeometry.geomType === GEOM_POINTS)
+                {
+                    pointGeometries.push(geom);
+                }
+                else if (color.w !== 1)
+                {
+                    parts.push(geom);
                     transparentGeometries.push(geom);
                 }
                 else
                 {
+                    parts.push(geom);
                     geometries.push(geom);
                 }
             }
+            if (parts.length && firstColor) this.sectionElements.push(this.toSectionElement(mesh.expressID, parts, firstColor));
 
             //console.log(this.ifcAPI.wasmModule.HEAPU8.length);
         });
@@ -93,10 +127,47 @@ export class IfcThree
             scene.add(mergedMeshTransp);
         }
 
+        // wireframe representation items (e.g. IfcAnnotation Curve3D geometry,
+        // grids, curve sets) are polylines and must not be drawn as triangles
+        if (lineGeometries.length > 0)
+        {
+            const combinedLines = BufferGeometryUtils.mergeGeometries(lineGeometries);
+            const lineMaterial = new THREE.LineBasicMaterial();
+            lineMaterial.vertexColors = true;
+            scene.add(new THREE.LineSegments(combinedLines, lineMaterial));
+        }
+
+        if (pointGeometries.length > 0)
+        {
+            const combinedPoints = BufferGeometryUtils.mergeGeometries(pointGeometries);
+            const pointMaterial = new THREE.PointsMaterial();
+            pointMaterial.vertexColors = true;
+            scene.add(new THREE.Points(combinedPoints, pointMaterial));
+        }
 
         console.log(`Uploading took ${ms() - startUploadingTime} ms`);
     }
     
+    private toSectionElement(expressID: number, parts: THREE.BufferGeometry[], color: Color): SectionElement {
+        let nv = 0, ni = 0;
+        for (const g of parts) { nv += g.attributes.position.count; ni += g.index ? g.index.count : 0; }
+        const positions = new Float32Array(nv * 3), indices = new Uint32Array(ni);
+        const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+        let vo = 0, io = 0;
+        for (const g of parts) {
+            const p = g.attributes.position.array as ArrayLike<number>;
+            for (let k = 0; k < p.length; k++) {
+                positions[vo * 3 + k] = p[k];
+                const a = k % 3;
+                if (p[k] < min[a]) min[a] = p[k];
+                if (p[k] > max[a]) max[a] = p[k];
+            }
+            if (g.index) { const ix = g.index.array; for (let k = 0; k < ix.length; k++) indices[io + k] = ix[k] + vo; io += ix.length; }
+            vo += g.attributes.position.count;
+        }
+        return { expressID, positions, indices, color, min, max };
+    }
+
     private getFlatMeshes(modelID: number) {
         const startGeomTime = ms();
         const flatMeshes = this.ifcAPI.LoadAllGeometry(modelID);
@@ -157,6 +228,27 @@ export class IfcThree
         return mat;
     }
     
+    // Rewrites the sequential strip index of a wireframe geometry into line
+    // segment pairs, so merged polylines render as LINE_SEGMENTS without
+    // extra segments connecting unrelated curves.
+    private toLineSegments(geometry: THREE.BufferGeometry): THREE.BufferGeometry
+    {
+        const index = geometry.getIndex();
+        if (index)
+        {
+            const src = index.array as ArrayLike<number>;
+            const segments = Math.max(0, src.length - 1);
+            const pairs = new Uint32Array(segments * 2);
+            for (let i = 0; i < segments; i++)
+            {
+                pairs[i * 2] = src[i];
+                pairs[i * 2 + 1] = src[i + 1];
+            }
+            geometry.setIndex(new THREE.BufferAttribute(pairs, 1));
+        }
+        return geometry;
+    }
+
     private ifcGeometryToBuffer(color: Color, vertexData: Float32Array, indexData: Uint32Array) {
         const geometry = new THREE.BufferGeometry();
         /*

@@ -81,6 +81,23 @@ namespace webifc::parsing
       }
       return "";
   }
+
+  std::string_view IfcTokenStream::ReadBinaryString()
+  {
+      if (!_cChunk->IsLoaded()) {
+        checkMemory();
+        _activeChunks++;
+      }
+      auto length = _cChunk->Read<BinaryLength>(_readPtr);
+      Forward(sizeof(BinaryLength));
+      if (length > 0)
+      {
+        auto str = _cChunk->ReadString(_readPtr,length);
+        Forward(length);
+        return str;
+      }
+      return "";
+  }
     
   void IfcTokenStream::MoveTo(const size_t pos)
   {
