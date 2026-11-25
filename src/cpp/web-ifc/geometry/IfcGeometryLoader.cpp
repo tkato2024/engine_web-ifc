@@ -8,6 +8,7 @@
 #include "../schema/IfcSchemaManager.h"
 #include "operations/curve-utils.h"
 #include "operations/geometryutils.h"
+#include "operations/boolean-utils/eps.h"
 #ifdef DEBUG_DUMP_SVG
 #include "../../test/io_helpers.h"
 #include "../../test/dumpToThree.h"
@@ -777,7 +778,7 @@ namespace webifc::geometry
       double SegmentLength = _loader.GetDoubleArgument();
 
       _loader.MoveToArgumentOffset(expressID, 7);
-      double GravityCenterLineHeight = _loader.GetDoubleArgument();
+      /* double GravityCenterLineHeight = */ _loader.GetDoubleArgument();
 
       std::string str(type);
 
@@ -919,8 +920,6 @@ namespace webifc::geometry
 
         glm::dvec3 iPoint = glm::dvec3(StartDistAlong, StartHeight, 1);
         glm::dvec3 jPoint = glm::dvec3(StartDistAlong + HorizontalLength, StartHeight + HorizontalLength * StartGradient, 1);
-        glm::dvec3 Normal = glm::dvec3(0, 0, 1);
-
         curve.Add(iPoint);
         curve.Add(jPoint);
 
@@ -2237,11 +2236,11 @@ namespace webifc::geometry
     case schema::IFCCOMPOSITECURVESEGMENT:
     {
       _loader.MoveToArgumentOffset(expressID, 0);
-      auto transition = _loader.GetStringArgument();
+      /* auto transition = */ _loader.GetStringArgument();
       auto sameSenseS = _loader.GetStringArgument();
       auto parentID = _loader.GetRefArgument();
 
-	  ComputeCurveParams segmentParams( params );
+      ComputeCurveParams segmentParams( params );
       segmentParams.sameSense = sameSenseS == "T";
       ComputeCurve(parentID, curve, segmentParams);
 
@@ -2383,7 +2382,7 @@ namespace webifc::geometry
       auto trim2Set = _loader.GetSetArgument();
 
       auto senseAgreementS = _loader.GetStringArgument();
-      auto trimmingPreference = _loader.GetStringArgument();
+      /* auto trimmingPreference = */ _loader.GetStringArgument();
 
       auto trim1 = GetTrimSelect(params.dimensions, trim1Set);
       auto trim2 = GetTrimSelect(params.dimensions, trim2Set);
@@ -2839,7 +2838,7 @@ namespace webifc::geometry
 
         _loader.MoveToArgumentOffset(expressID, 0);
         auto segmentTokens = _loader.GetSetArgument();   // Gradient segments
-        auto u = _loader.GetStringArgument();            // SelfIntersect attribute
+        /* auto u = */ _loader.GetStringArgument();      // SelfIntersect attribute
         uint32_t BaseCurveID = _loader.GetRefArgument(); // BaseCurve reference
         
         // Get the 2D base curve (projection)
@@ -3184,9 +3183,9 @@ namespace webifc::geometry
       _loader.MoveToArgumentOffset(expressID, 0);
       int degree = _loader.GetIntArgument();
       auto points = _loader.GetSetArgument();
-      auto curveType = _loader.GetStringArgument();
-      auto closed = _loader.GetStringArgument();
-      auto selfIntersect = _loader.GetStringArgument();
+      /* auto curveType = */ _loader.GetStringArgument();
+      /* auto closed = */ _loader.GetStringArgument();
+      /* auto selfIntersect = */ _loader.GetStringArgument();
 
       // build default knots
       for (size_t k = 0; k < points.size() + degree + 1; k++)
@@ -3262,9 +3261,9 @@ namespace webifc::geometry
       _loader.MoveToArgumentOffset(expressID, 0);
       int degree = _loader.GetIntArgument();
       auto points = _loader.GetSetArgument();
-      auto curveType = _loader.GetStringArgument();
-      auto closed = _loader.GetStringArgument();
-      auto selfIntersect = _loader.GetStringArgument();
+      /* auto curveType = */ _loader.GetStringArgument();
+      /* auto closed = */ _loader.GetStringArgument();
+      /* auto selfIntersect = */ _loader.GetStringArgument();
       auto knotMultiplicitiesSet = _loader.GetSetArgument(); // The multiplicities of the knots. This list defines the number of times each knot in the knots list is to be repeated in constructing the knot array.
       auto knotSet = _loader.GetSetArgument();               // The list of distinct knots used to define the B-spline basis functions.
 
@@ -3347,12 +3346,12 @@ namespace webifc::geometry
       _loader.MoveToArgumentOffset(expressID, 0);
       int degree = _loader.GetIntArgument();
       auto points = _loader.GetSetArgument();
-      auto curveType = _loader.GetStringArgument();
-      auto closed = _loader.GetStringArgument();
-      auto selfIntersect = _loader.GetStringArgument();
+      /* auto curveType = */ _loader.GetStringArgument();
+      /* auto closed = */ _loader.GetStringArgument();
+      /* auto selfIntersect = */ _loader.GetStringArgument();
       auto knotMultiplicitiesSet = _loader.GetSetArgument(); // The multiplicities of the knots. This list defines the number of times each knot in the knots list is to be repeated in constructing the knot array.
       auto knotSet = _loader.GetSetArgument();
-      auto knotSpec = _loader.GetStringArgument(); // The description of the knot type. This is for information only.
+      /* auto knotSpec = */ _loader.GetStringArgument(); // The description of the knot type. This is for information only.
       auto weightsSet = _loader.GetSetArgument();
 
       for (auto &token : knotMultiplicitiesSet)
@@ -4233,7 +4232,6 @@ namespace webifc::geometry
 
       // optional parameters
       double filletRadius = _loader.GetOptionalDoubleParam(0);
-      bool hasFillet = filletRadius > 0;
       double edgeRadius = _loader.GetOptionalDoubleParam(0);
       // flangeSlope is intentionally not supported for U-shape
       _loader.GetOptionalDoubleParam(0);
@@ -4305,7 +4303,6 @@ namespace webifc::geometry
       double webThickness = _loader.GetDoubleArgument();
       double flangeThickness = _loader.GetDoubleArgument();
       double filletRadius = _loader.GetOptionalDoubleParam(0);
-      bool hasFillet = filletRadius > 0;
       double edgeRadius = _loader.GetOptionalDoubleParam(0);
 
       profile.curve = GetZShapedCurve(depth, flangeWidth, webThickness, flangeThickness, filletRadius, edgeRadius, placement, _circleSegments);
@@ -4374,7 +4371,7 @@ namespace webifc::geometry
       IfcProfile profile = IfcProfile();
 
       _loader.MoveToArgumentOffset(expressID, 2);
-      auto horizontalWidth = _loader.GetStringArgument();
+      /* auto horizontalWidth = */ _loader.GetStringArgument();
       _loader.MoveToArgumentOffset(expressID, 3);
       auto widthsTokens = _loader.GetSetListArgument();
       _loader.MoveToArgumentOffset(expressID, 4);
@@ -4658,7 +4655,7 @@ namespace webifc::geometry
     return curve;
   }
 
-  glm::dmat4 IfcGeometryLoader::GetLocalPlacement(uint32_t expressID, glm::dvec3 vector) const
+  glm::dmat4 IfcGeometryLoader::GetLocalPlacement(uint32_t expressID, [[maybe_unused]] glm::dvec3 vector) const
   {
     if (_activePlacements.size() >= 512 || !_activePlacements.insert(expressID).second)
     {

@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "../representation/IfcCurve.h"
+#include "../operations/bim-geometry/epsilons.h"
 
 namespace webifc::geometry {
 
@@ -485,7 +486,7 @@ inline IfcCurve Build3DArc3Pt(const glm::dvec3 &p1, const glm::dvec3 &p2, const 
 		return c;
 	}
 
-	inline IfcCurve BuildArc(double scale, const glm::dvec3 &pos, const glm::dvec3 &axis, double angleRad,uint16_t _circleSegments)
+	inline IfcCurve BuildArc([[maybe_unused]] double scale, const glm::dvec3 &pos, const glm::dvec3 &axis, double angleRad,uint16_t _circleSegments)
 	{
 		
 		spdlog::debug("[BuildArc({})]");
@@ -500,7 +501,7 @@ inline IfcCurve Build3DArc3Pt(const glm::dvec3 &p1, const glm::dvec3 &p2, const 
 
 		if(glm::length(right) == 0)
 		{
-			right = glm::dvec3(EPS_BIG2, 0, 0);
+			right = glm::dvec3(bimGeometry::EPS_BIG2, 0, 0);
 			glm::dvec3 up = glm::cross(axis, right);
 
 			auto curve2D = GetEllipseCurve(1, 1, _circleSegments, glm::dmat3(1), 0, angleRad, true, true);

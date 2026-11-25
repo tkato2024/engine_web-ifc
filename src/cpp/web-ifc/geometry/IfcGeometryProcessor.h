@@ -42,6 +42,7 @@ namespace webifc::geometry
   {
   public:
     IfcGeometry BoolProcess(const std::vector<IfcGeometry> &firstGeoms, std::vector<IfcGeometry> &secondGeoms, std::string op, IfcGeometrySettings _settings);
+    IfcGeometry BoolProcessChain(const std::vector<IfcGeometry> &firstGeoms, std::vector<IfcGeometry> &secondGeoms, std::string op, IfcGeometrySettings _settings, bool useHook);
 
   private:
     fuzzybools::Geometry convertToEngine(Geometry geom);
@@ -91,12 +92,12 @@ namespace webifc::geometry
     uint64_t _mappedRepresentationsRevision = 0;
     IfcComposedMesh GetMeshUncached(uint32_t expressID, uint32_t lineType);
     IfcSurface GetSurface(uint32_t expressID);
-    IfcGeometryLoader _geometryLoader;
     glm::dmat4 _transformation = glm::dmat4(1.0);
     const parsing::IfcLoader &_loader;
     webifc::cache::IfcCache _cache;
     booleanManager _boolEngine;
     const schema::IfcSchemaManager &_schemaManager;
+    IfcGeometryLoader _geometryLoader;
     bool _isCoordinated = false;
     uint32_t _expressIdCyl = 0;
     uint32_t _expressIdRect = 0;

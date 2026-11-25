@@ -8,6 +8,8 @@
 #include "boolean-utils/svg.h"
 #endif
 
+#include "boolean-utils/eps.h"
+
 #ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -836,8 +838,6 @@ namespace webifc::geometry
 	inline std::optional<glm::dvec3> GetOriginRec(IfcComposedMesh &mesh, std::unordered_map<uint32_t, IfcGeometry> &geometryMap, glm::dmat4 mat)
 	{
 		glm::dmat4 newMat = mat * mesh.transformation;
-
-		bool transformationBreaksWinding = MatrixFlipsTriangles(newMat);
 
 		auto geomIt = geometryMap.find(mesh.expressID);
 
